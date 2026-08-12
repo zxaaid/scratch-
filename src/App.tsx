@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import {
   Workspace,
@@ -32,6 +32,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { TabBar } from './components/TabBar';
 import { PenToolbar } from './components/PenToolbar';
 import { CanvasEditor } from './components/CanvasEditor';
+import { BottomPageToolbar } from './components/BottomPageToolbar';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
 import { AiDiffModal } from './components/AiDiffModal';
@@ -46,6 +47,51 @@ export default function App() {
   // Sidebar & Navigation
   const [activeActivityTab, setActiveActivityTab] = useState<ActivityTab>('explorer');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(260);
+  const [isSidebarShrunk, setIsSidebarShrunk] = useState<boolean>(false);
+  const isDraggingSidebarRef = useRef<boolean>(false);
+
+  const handleSidebarResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSidebarRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingSidebarRef.current) return;
+      // ActivityBar width is 48px
+      const newWidth = Math.max(120, Math.min(600, moveEvent.clientX - 48));
+      setSidebarWidth(newWidth);
+      if (newWidth < 170) {
+        setIsSidebarShrunk(true);
+      } else {
+        setIsSidebarShrunk(false);
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDraggingSidebarRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleToggleSidebarShrink = useCallback(() => {
+    setIsSidebarShrunk((prev) => {
+      if (!prev) {
+        setSidebarWidth(140);
+        return true;
+      } else {
+        setSidebarWidth(260);
+        return false;
+      }
+    });
+  }, []);
 
   // Tabs State
   const [tabs, setTabs] = useState<TabItem[]>([
@@ -557,9 +603,12 @@ export default function App() {
           tabletConnected={tabletConnected}
         />
 
-        {/* Collapsible Sidebar Panel */}
+        {/* Collapsible & Shrinkable Sidebar Panel */}
         {isSidebarOpen && (
-          <div className="h-full flex shrink-0">
+          <div
+            className="h-full flex shrink-0 relative transition-all duration-150"
+            style={{ width: isSidebarShrunk ? 140 : sidebarWidth }}
+          >
             {activeActivityTab === 'explorer' && (
               <ExplorerPanel
                 workspace={workspace}
@@ -567,6 +616,8 @@ export default function App() {
                 activePageId={activeTab?.pageId}
                 onSelectPage={handleSelectPage}
                 currentTheme={currentTheme}
+                isShrunk={isSidebarShrunk}
+                onToggleShrink={handleToggleSidebarShrink}
               />
             )}
             {activeActivityTab === 'practice' && (
@@ -618,6 +669,15 @@ export default function App() {
                 setPageAspectRatio={setPageAspectRatio}
               />
             )}
+
+            {/* Draggable Vertical Resize Bar on Right Edge */}
+            <div
+              onMouseDown={handleSidebarResizeMouseDown}
+              className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-sky-500/50 active:bg-sky-500 z-30 group flex items-center justify-center transition-colors"
+              title="Drag to adjust sidebar width (shrink/expand)"
+            >
+              <div className="w-[2px] h-8 rounded-full bg-white/20 group-hover:bg-sky-300" />
+            </div>
           </div>
         )}
 
@@ -676,12 +736,20 @@ export default function App() {
             onUpdatePageStrokes={handleUpdatePageStrokes}
             onUpdatePdfAnnotations={handleUpdatePdfAnnotations}
             onUpdateTabletPressure={(p) => setTabletPressure(p)}
+            pageAspectRatio={pageAspectRatio}
+            onSetPageAspectRatio={setPageAspectRatio}
+          />
+
+          {/* Bottom Page Control Toolbar (Outside Working Area Canvas) */}
+          <BottomPageToolbar
+            pageAspectRatio={pageAspectRatio}
+            onSetPageAspectRatio={setPageAspectRatio}
+            onAddPage={handleNewBlankPage}
             notebookPages={activeNotebook?.pages}
             currentPageIndex={activeNotebook?.pages.findIndex((p) => p.id === activePage?.id)}
             onSelectPage={(pageId) => activeNotebook && handleSelectPage(activeNotebook.id, pageId)}
-            onAddPage={handleNewBlankPage}
-            pageAspectRatio={pageAspectRatio}
-            onSetPageAspectRatio={setPageAspectRatio}
+            currentTheme={currentTheme}
+            activePageTitle={activePage?.title}
           />
         </div>
       </div>

@@ -16,6 +16,8 @@ import {
   Search,
   Tag,
   Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { Workspace, Folder as FolderType, Notebook, Page, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
@@ -26,6 +28,8 @@ interface ExplorerPanelProps {
   activePageId?: string;
   onSelectPage: (notebookId: string, pageId: string) => void;
   currentTheme: ThemeId;
+  isShrunk?: boolean;
+  onToggleShrink?: () => void;
 }
 
 export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
@@ -34,6 +38,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   activePageId,
   onSelectPage,
   currentTheme,
+  isShrunk,
+  onToggleShrink,
 }) => {
   const theme = THEMES[currentTheme];
   const [searchQuery, setSearchQuery] = useState('');
@@ -148,7 +154,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
 
   return (
     <div
-      className="w-64 h-full flex flex-col select-none border-r text-xs overflow-hidden"
+      className="w-full h-full flex flex-col select-none border-r text-xs overflow-hidden"
       style={{
         backgroundColor: theme.sidebarBg,
         color: theme.sidebarFg,
@@ -163,7 +169,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           borderColor: theme.border,
         }}
       >
-        <span>Explorer</span>
+        <span className="truncate">{isShrunk ? 'Exp.' : 'Explorer'}</span>
         <div className="flex items-center gap-1">
           <button
             onClick={handleAddFolder}
@@ -179,6 +185,15 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           >
             <BookPlus size={15} />
           </button>
+          {onToggleShrink && (
+            <button
+              onClick={onToggleShrink}
+              className="p-1 rounded hover:bg-white/10 text-sky-400 hover:text-sky-300 ml-1"
+              title={isShrunk ? 'Expand Explorer Panel' : 'Shrink Explorer Panel to Maximize Working Area'}
+            >
+              {isShrunk ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          )}
         </div>
       </div>
 
