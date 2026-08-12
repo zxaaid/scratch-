@@ -18,9 +18,13 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  Download,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { Workspace, Folder as FolderType, Notebook, Page, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
+import { downloadNotebookAsPdf, downloadPageAsPdf, downloadSelectedFiles } from '../lib/exportUtils';
 
 interface ExplorerPanelProps {
   workspace: Workspace;
@@ -44,6 +48,18 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   const theme = THEMES[currentTheme];
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+
+  const toggleSelectItem = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDownloadSelected = () => {
+    downloadSelectedFiles(workspace.notebooks, selectedItemIds, workspace.pdfs);
+  };
 
   // Toggle folder expansion
   const toggleFolder = (folderId: string) => {
@@ -197,8 +213,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
         </div>
       </div>
 
-      {/* Search Input */}
-      <div className="p-2 border-b" style={{ borderColor: theme.border }}>
+      {/* Search & Selection Bar */}
+      <div className="p-2 border-b flex flex-col gap-1.5" style={{ borderColor: theme.border }}>
         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/20 border border-white/10">
           <Search size={13} className="text-gray-400" />
           <input
@@ -209,6 +225,29 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
             className="w-full bg-transparent outline-none text-xs text-white placeholder-gray-500"
           />
         </div>
+
+        {selectedItemIds.length > 0 ? (
+          <button
+            onClick={handleDownloadSelected}
+            className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded flex items-center justify-center gap-1.5 shadow transition-all text-xs cursor-pointer"
+          >
+            <Download size={13} />
+            <span>Download Selected ({selectedItemIds.length})</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              if (workspace.notebooks.length > 0) {
+                downloadNotebookAsPdf(workspace.notebooks[0]);
+              }
+            }}
+            className="w-full py-1 px-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded flex items-center justify-center gap-1.5 transition-all text-[11px] cursor-pointer border border-white/10"
+            title="Download active notebook as PDF"
+          >
+            <Download size={12} className="text-emerald-400" />
+            <span>Download Current File</span>
+          </button>
+        )}
       </div>
 
       {/* Tag Filter Strip */}
@@ -296,6 +335,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
                       onDeleteNotebook={handleDeleteNotebook}
                       onToggleFavorite={handleToggleFavorite}
                       theme={theme}
+                      selectedItemIds={selectedItemIds}
+                      onToggleSelect={toggleSelectItem}
                     />
                   ))}
                 </div>
@@ -322,6 +363,8 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
               onDeleteNotebook={handleDeleteNotebook}
               onToggleFavorite={handleToggleFavorite}
               theme={theme}
+              selectedItemIds={selectedItemIds}
+              onToggleSelect={toggleSelectItem}
             />
           ))}
       </div>
@@ -337,6 +380,8 @@ interface NotebookTreeItemProps {
   onDeleteNotebook: (e: React.MouseEvent, id: string) => void;
   onToggleFavorite: (e: React.MouseEvent, id: string) => void;
   theme: any;
+  selectedItemIds: string[];
+  onToggleSelect: (id: string, e?: React.MouseEvent) => void;
 }
 
 const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
@@ -347,8 +392,11 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
   onDeleteNotebook,
   onToggleFavorite,
   theme,
+  selectedItemIds,
+  onToggleSelect,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
+  const isNotebookSelected = selectedItemIds.includes(notebook.id);
 
   return (
     <div className="space-y-0.5">
@@ -358,11 +406,32 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
         className="flex items-center justify-between px-2 py-1 rounded cursor-pointer hover:bg-white/5 group"
       >
         <div className="flex items-center gap-1.5 truncate">
+          <button
+            onClick={(e) => onToggleSelect(notebook.id, e)}
+            className="text-gray-400 hover:text-sky-400 p-0.5"
+            title="Select notebook to download"
+          >
+            {isNotebookSelected ? (
+              <CheckSquare size={13} className="text-sky-400" />
+            ) : (
+              <Square size={13} className="text-gray-500" />
+            )}
+          </button>
           {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           <Book size={14} className="text-sky-400 shrink-0" />
           <span className="font-medium truncate">{notebook.title}</span>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadNotebookAsPdf(notebook);
+            }}
+            className="p-0.5 text-gray-400 hover:text-emerald-400"
+            title="Download Notebook as PDF"
+          >
+            <Download size={12} />
+          </button>
           <button
             onClick={(e) => onToggleFavorite(e, notebook.id)}
             className={`p-0.5 ${notebook.isFavorite ? 'text-amber-400' : 'text-gray-400 hover:text-amber-400'}`}
@@ -395,16 +464,40 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
         <div className="pl-4 space-y-0.5 border-l border-white/5 ml-2">
           {notebook.pages.map((page) => {
             const isActive = activePageId === page.id;
+            const isPageSelected = selectedItemIds.includes(page.id);
             return (
               <div
                 key={page.id}
                 onClick={() => onSelectPage(notebook.id, page.id)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer transition-colors ${
+                className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors group/page ${
                   isActive ? 'bg-sky-600/30 text-sky-200 font-semibold border-l-2 border-sky-400' : 'hover:bg-white/5 text-gray-300'
                 }`}
               >
-                <FileText size={13} className={isActive ? 'text-sky-400' : 'text-gray-500'} />
-                <span className="truncate">{page.title}</span>
+                <div className="flex items-center gap-1.5 truncate">
+                  <button
+                    onClick={(e) => onToggleSelect(page.id, e)}
+                    className="text-gray-400 hover:text-sky-400 p-0.5"
+                    title="Select page to download"
+                  >
+                    {isPageSelected ? (
+                      <CheckSquare size={12} className="text-sky-400" />
+                    ) : (
+                      <Square size={12} className="text-gray-600" />
+                    )}
+                  </button>
+                  <FileText size={13} className={isActive ? 'text-sky-400' : 'text-gray-500'} />
+                  <span className="truncate">{page.title}</span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadPageAsPdf(page, notebook.title);
+                  }}
+                  className="opacity-0 group-hover/page:opacity-100 p-0.5 text-gray-400 hover:text-emerald-400"
+                  title="Download Page PDF"
+                >
+                  <Download size={12} />
+                </button>
               </div>
             );
           })}

@@ -750,6 +750,8 @@ export default function App() {
             onSelectPage={(pageId) => activeNotebook && handleSelectPage(activeNotebook.id, pageId)}
             currentTheme={currentTheme}
             activePageTitle={activePage?.title}
+            activePage={activePage}
+            activeNotebook={activeNotebook}
           />
         </div>
       </div>

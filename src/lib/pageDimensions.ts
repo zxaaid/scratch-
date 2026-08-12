@@ -1,6 +1,13 @@
 import { PageAspectRatio, PageAspectPreset } from '../types';
 
 export const PAGE_ASPECT_PRESETS: Record<PageAspectRatio, PageAspectPreset> = {
+  'flexible': {
+    id: 'flexible',
+    name: 'Flexible (Fit Working Area)',
+    width: 0,
+    height: 0,
+    label: 'Flexible (Auto-Fit Working Area)',
+  },
   'a4-portrait': {
     id: 'a4-portrait',
     name: 'A4 Portrait',

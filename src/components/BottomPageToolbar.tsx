@@ -1,7 +1,8 @@
-import React from 'react';
-import { Plus, RectangleHorizontal, ChevronLeft, ChevronRight, FileText, Check } from 'lucide-react';
-import { Page, PageAspectRatio, ThemeId } from '../types';
+import React, { useState } from 'react';
+import { Plus, RectangleHorizontal, ChevronLeft, ChevronRight, FileText, Check, Maximize2, Download, FileCode, Image } from 'lucide-react';
+import { Page, PageAspectRatio, ThemeId, Notebook } from '../types';
 import { THEMES } from '../lib/themes';
+import { downloadPageAsPdf, downloadPageAsPng, downloadNotebookAsPdf } from '../lib/exportUtils';
 
 interface BottomPageToolbarProps {
   pageAspectRatio: PageAspectRatio;
@@ -12,6 +13,8 @@ interface BottomPageToolbarProps {
   onSelectPage?: (pageId: string) => void;
   currentTheme: ThemeId;
   activePageTitle?: string;
+  activePage?: Page;
+  activeNotebook?: Notebook;
 }
 
 export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
@@ -23,15 +26,50 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
   onSelectPage,
   currentTheme,
   activePageTitle,
+  activePage,
+  activeNotebook,
 }) => {
   const theme = THEMES[currentTheme];
   const isLandscape = pageAspectRatio === 'a4-landscape';
+  const isFlexible = pageAspectRatio === 'flexible';
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
 
   const toggleA4Landscape = () => {
     if (isLandscape) {
       onSetPageAspectRatio('a4-portrait');
     } else {
       onSetPageAspectRatio('a4-landscape');
+    }
+  };
+
+  const toggleFlexible = () => {
+    if (isFlexible) {
+      onSetPageAspectRatio('a4-portrait');
+    } else {
+      onSetPageAspectRatio('flexible');
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    setShowDownloadMenu(false);
+    if (activePage) {
+      downloadPageAsPdf(activePage, activeNotebook?.title);
+    } else if (activeNotebook) {
+      downloadNotebookAsPdf(activeNotebook);
+    }
+  };
+
+  const handleDownloadPng = () => {
+    setShowDownloadMenu(false);
+    if (activePage) {
+      downloadPageAsPng(activePage);
+    }
+  };
+
+  const handleDownloadNotebook = () => {
+    setShowDownloadMenu(false);
+    if (activeNotebook) {
+      downloadNotebookAsPdf(activeNotebook);
     }
   };
 
@@ -101,7 +139,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
         )}
       </div>
 
-      {/* Right side: Explicitly requested "+ Add Page" and "A4 Landscape" buttons */}
+      {/* Right side: Action Controls (+ Add Page, A4 Landscape, Fit Working Area) */}
       <div className="flex items-center gap-2">
         {/* + ADD PAGE BUTTON */}
         <button
@@ -127,6 +165,68 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
           <span>A4 Landscape</span>
           {isLandscape && <Check size={13} className="text-amber-400 ml-0.5" />}
         </button>
+
+        {/* FIT WORKING AREA (FLEXIBLE PAGE) BUTTON */}
+        <button
+          onClick={toggleFlexible}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer border ${
+            isFlexible
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+              : 'bg-black/30 hover:bg-black/50 text-gray-300 border-white/10 hover:text-white'
+          }`}
+          title={
+            isFlexible
+              ? 'Current: Flexible Auto-Fit (Click to toggle A4 Portrait)'
+              : 'Make page size flexible to fill the entire working area'
+          }
+        >
+          <Maximize2 size={14} className={isFlexible ? 'text-emerald-400' : 'text-gray-400'} />
+          <span>Fit Working Area</span>
+          {isFlexible && <Check size={13} className="text-emerald-400 ml-0.5" />}
+        </button>
+
+        {/* DOWNLOAD BUTTON WITH MENU */}
+        <div className="relative">
+          <button
+            onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold text-white shadow-sm transition-all active:scale-95 cursor-pointer border border-emerald-400/40"
+            title="Download active page or notebook"
+          >
+            <Download size={15} />
+            <span>Download</span>
+          </button>
+
+          {showDownloadMenu && (
+            <div className="absolute right-0 bottom-10 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden z-50 p-1 space-y-0.5 text-xs">
+              <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-zinc-800">
+                Download Options
+              </div>
+              <button
+                onClick={handleDownloadPdf}
+                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2 font-medium cursor-pointer"
+              >
+                <FileCode size={14} className="text-rose-400" />
+                <span>Download Page as PDF</span>
+              </button>
+              <button
+                onClick={handleDownloadPng}
+                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2 font-medium cursor-pointer"
+              >
+                <Image size={14} className="text-sky-400" />
+                <span>Download Page as PNG</span>
+              </button>
+              {activeNotebook && (
+                <button
+                  onClick={handleDownloadNotebook}
+                  className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-gray-200 hover:text-white flex items-center gap-2 font-medium cursor-pointer border-t border-zinc-800 mt-1 pt-2"
+                >
+                  <Download size={14} className="text-amber-400" />
+                  <span>Download Full Notebook PDF</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

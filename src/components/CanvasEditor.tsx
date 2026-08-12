@@ -663,10 +663,18 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.scale(zoom, zoom);
 
     const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
-    const pageWidth = pagePreset.width;
-    const pageHeight = pagePreset.height;
-    const paperX = 60;
-    const paperY = 60;
+    const isFlexible = pageAspectRatio === 'flexible';
+
+    let pageWidth = pagePreset.width;
+    let pageHeight = pagePreset.height;
+
+    if (isFlexible || pageWidth === 0) {
+      pageWidth = Math.max(300, (width - 48) / zoom);
+      pageHeight = Math.max(300, (height - 48) / zoom);
+    }
+
+    const paperX = Math.max(24 / zoom, (width / zoom - pageWidth) / 2);
+    const paperY = Math.max(24 / zoom, (height / zoom - pageHeight) / 2);
 
     // LAYER 1: A4 Paper Card with Drop Shadow
     ctx.save();
@@ -833,17 +841,36 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [drawCanvas]);
 
-  // Container Resize
+  // Container Resize Observer for auto-adjusting working area & page size
   useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current && canvasRef.current) {
-        canvasRef.current.width = containerRef.current.clientWidth;
-        canvasRef.current.height = containerRef.current.clientHeight;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateCanvasSize = () => {
+      if (canvasRef.current && containerRef.current) {
+        const w = containerRef.current.clientWidth;
+        const h = containerRef.current.clientHeight;
+        if (w > 0 && h > 0 && (canvasRef.current.width !== w || canvasRef.current.height !== h)) {
+          canvasRef.current.width = w;
+          canvasRef.current.height = h;
+        }
       }
     };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    updateCanvasSize();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateCanvasSize();
+    });
+
+    resizeObserver.observe(container);
+
+    window.addEventListener('resize', updateCanvasSize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateCanvasSize);
+    };
   }, []);
 
   // Pointer Down Handler
