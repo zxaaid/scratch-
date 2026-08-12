@@ -1,0 +1,6 @@
+{
+  "name": "Handwriting Workspace",
+  "description": "VS Code inspired professional handwriting and note-taking workspace with stroke stabilization, AI handwriting engine, PDF annotations, and notebook file tree management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
