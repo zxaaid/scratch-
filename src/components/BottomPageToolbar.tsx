@@ -40,7 +40,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
 
   const toggleFlexible = () => {
     if (isFlexible) {
-      onSetPageAspectRatio('a4-portrait');
+      onSetPageAspectRatio('a4-landscape');
     } else {
       onSetPageAspectRatio('flexible');
     }

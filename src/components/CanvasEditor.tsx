@@ -101,7 +101,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   currentPageIndex,
   onSelectPage,
   onAddPage,
-  pageAspectRatio = 'a4-portrait',
+  pageAspectRatio = 'a4-landscape',
   onSetPageAspectRatio,
 }) => {
   const theme = THEMES[currentTheme];
@@ -752,11 +752,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.translate(panX, panY);
     ctx.scale(zoom, zoom);
 
-    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
     const isFlexible = pageAspectRatio === 'flexible';
 
-    let pageWidth = pagePreset.width || 794;
-    let pageHeight = pagePreset.height || 1123;
+    let pageWidth = pagePreset.width || 1123;
+    let pageHeight = pagePreset.height || 794;
 
     if (isFlexible || pageWidth === 0) {
       pageWidth = Math.max(300, (width - 48) / zoom);
@@ -960,7 +960,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (w <= 0 || h <= 0) return;
 
     const isFlexible = pageAspectRatio === 'flexible';
-    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
 
     if (isFlexible) {
       setZoom(1.0);
@@ -969,11 +969,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       return;
     }
 
-    const pWidth = pagePreset.width || 794;
-    const pHeight = pagePreset.height || 1123;
+    const pWidth = pagePreset.width || 1123;
+    const pHeight = pagePreset.height || 794;
 
-    const fitZoom = Math.min((w - 48) / pWidth, (h - 48) / pHeight);
-    const targetZoom = Math.min(1.0, Math.max(0.35, fitZoom));
+    const fitZoom = Math.min((w - 32) / pWidth, (h - 32) / pHeight);
+    const targetZoom = Math.max(0.25, Math.min(3.0, fitZoom));
 
     const targetPanX = Math.round((w - pWidth * targetZoom) / 2);
     const targetPanY = Math.round((h - pHeight * targetZoom) / 2);
@@ -1174,9 +1174,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       if (container) {
         const w = container.clientWidth;
         const h = container.clientHeight;
-        const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
-        const pWidth = pagePreset.width || 794;
-        const pHeight = pagePreset.height || 1123;
+        const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+        const pWidth = pagePreset.width || 1123;
+        const pHeight = pagePreset.height || 794;
 
         const rawPanX = e.clientX - panStart.x;
         const rawPanY = e.clientY - panStart.y;
@@ -1438,9 +1438,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
-    const pWidth = pagePreset.width || 794;
-    const pHeight = pagePreset.height || 1123;
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+    const pWidth = pagePreset.width || 1123;
+    const pHeight = pagePreset.height || 794;
 
     const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
     const minZoom = Math.max(0.35, Math.min(fitZoom, 0.95));
@@ -1655,9 +1655,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           onClick={() => {
             const container = containerRef.current;
             if (!container) return;
-            const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
-            const pWidth = pagePreset.width || 794;
-            const pHeight = pagePreset.height || 1123;
+            const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+            const pWidth = pagePreset.width || 1123;
+            const pHeight = pagePreset.height || 794;
             const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
             const minZ = Math.max(0.35, Math.min(fitZoom, 0.95));
             setZoom((z) => Math.max(minZ, z - 0.1));

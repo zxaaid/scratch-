@@ -171,7 +171,7 @@ export default function App() {
   const [opacity, setOpacity] = useState<number>(1.0);
   const [handwritingMode, setHandwritingMode] = useState<HandwritingMode>(1);
   const [defaultTemplate, setDefaultTemplate] = useState<PageTemplate>('ruled');
-  const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('a4-portrait');
+  const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('a4-landscape');
   const [penPresets, setPenPresets] = useState<PenPreset[]>(INITIAL_PEN_PRESETS);
   const [tabletSettings, setTabletSettings] = useState<TabletSettings>(INITIAL_TABLET_SETTINGS);
 
