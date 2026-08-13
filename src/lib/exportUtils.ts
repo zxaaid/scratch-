@@ -1,100 +1,291 @@
 import jsPDF from 'jspdf';
-import { Page, Notebook, PDFItem } from '../types';
+import { Page, Notebook, PDFItem, ThemeId } from '../types';
 
 /**
- * Downloads a single Page canvas as a PNG image file
+ * Renders an exact high-resolution visual copy of a Page onto an HTML Canvas
  */
-export const downloadPageAsPng = (page: Page, canvasWidth = 1200, canvasHeight = 900) => {
+export const renderPageToCanvas = (
+  page: Page,
+  _currentTheme: ThemeId = 'vscode-dark'
+): HTMLCanvasElement => {
+  const isDarkTemplate = page.template === 'dark-ruled' || page.template === 'dark-grid';
+
+  let maxX = 794;
+  let maxY = 1123;
+
+  if (page.strokes && page.strokes.length > 0) {
+    page.strokes.forEach((s) => {
+      const pts = s.smoothedPoints || s.points || [];
+      pts.forEach((pt) => {
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y > maxY) maxY = pt.y;
+      });
+    });
+  }
+
+  if (page.shapes && page.shapes.length > 0) {
+    page.shapes.forEach((s) => {
+      const w = s.width || 100;
+      const h = s.height || 100;
+      if (s.x + w > maxX) maxX = s.x + w;
+      if (s.y + h > maxY) maxY = s.y + h;
+    });
+  }
+
+  const canvasWidth = Math.ceil(Math.max(794, maxX));
+  const canvasHeight = Math.ceil(Math.max(1123, maxY));
+
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
 
-  if (!ctx) return;
+  // Exact Paper Background Color: Pure white for light paper templates, dark slate for dark templates
+  const paperBg = isDarkTemplate ? '#1e293b' : '#ffffff';
+  const gridLineColor = isDarkTemplate ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0';
+  const dotColor = isDarkTemplate ? 'rgba(255, 255, 255, 0.25)' : '#cbd5e1';
 
-  // Draw white background
-  ctx.fillStyle = '#ffffff';
+  // 1. Draw Paper Background
+  ctx.fillStyle = paperBg;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Draw page grid or ruling background if needed
-  if (page.template === 'ruled') {
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 1;
-    for (let y = 60; y < canvasHeight; y += 32) {
+  // 2. Draw Template Pattern (Ruled, Grid, Graph, Dot)
+  ctx.save();
+  ctx.strokeStyle = gridLineColor;
+  ctx.lineWidth = 1;
+
+  if (page.template === 'ruled' || page.template === 'dark-ruled') {
+    const lineHeight = 36;
+    for (let y = 60; y < canvasHeight; y += lineHeight) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(canvasWidth, y);
       ctx.stroke();
     }
-  } else if (page.template === 'grid') {
-    ctx.strokeStyle = '#f1f5f9';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvasWidth; x += 24) {
+    // Red left margin line
+    ctx.strokeStyle = '#f87171';
+    ctx.beginPath();
+    ctx.moveTo(70, 0);
+    ctx.lineTo(70, canvasHeight);
+    ctx.stroke();
+  } else if (page.template === 'grid' || page.template === 'graph' || page.template === 'dark-grid') {
+    const gridSize = page.template === 'graph' ? 16 : 28;
+    for (let x = 0; x < canvasWidth; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, canvasHeight);
       ctx.stroke();
     }
-    for (let y = 0; y < canvasHeight; y += 24) {
+    for (let y = 0; y < canvasHeight; y += gridSize) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(canvasWidth, y);
       ctx.stroke();
     }
+  } else if (page.template === 'dot') {
+    ctx.fillStyle = dotColor;
+    const dotSpacing = 28;
+    for (let x = 20; x < canvasWidth; x += dotSpacing) {
+      for (let y = 20; y < canvasHeight; y += dotSpacing) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
+  ctx.restore();
 
-  // Draw strokes
-  if (page.strokes && page.strokes.length > 0) {
-    page.strokes.forEach((stroke) => {
-      if (!stroke.points || stroke.points.length === 0) return;
-      ctx.save();
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = stroke.width;
-      ctx.globalAlpha = stroke.opacity ?? 1.0;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      ctx.beginPath();
-      stroke.points.forEach((pt, idx) => {
-        if (idx === 0) ctx.moveTo(pt.x, pt.y);
-        else ctx.lineTo(pt.x, pt.y);
-      });
-      ctx.stroke();
-      ctx.restore();
-    });
-  }
-
-  // Draw shapes
+  // 3. Draw Shapes, Text Boxes & Sticky Notes
   if (page.shapes && page.shapes.length > 0) {
     page.shapes.forEach((shape) => {
       ctx.save();
       ctx.strokeStyle = shape.color;
       ctx.fillStyle = shape.fillColor || 'transparent';
-      ctx.lineWidth = shape.strokeWidth;
+      ctx.lineWidth = shape.strokeWidth || 2;
       ctx.globalAlpha = shape.opacity ?? 1.0;
 
+      if (shape.rotation) {
+        const w = shape.width || 120;
+        const h = shape.height || 80;
+        ctx.translate(shape.x + w / 2, shape.y + h / 2);
+        ctx.rotate((shape.rotation * Math.PI) / 180);
+        ctx.translate(-(shape.x + w / 2), -(shape.y + h / 2));
+      }
+
       if (shape.type === 'rectangle') {
-        ctx.fillRect(shape.x, shape.y, shape.width, shape.height);
-        ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+        const w = shape.width || 120;
+        const h = shape.height || 80;
+        if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fillRect(shape.x, shape.y, w, h);
+        ctx.strokeRect(shape.x, shape.y, w, h);
       } else if (shape.type === 'circle') {
-        const radius = Math.min(shape.width, shape.height) / 2;
         ctx.beginPath();
-        ctx.arc(shape.x + radius, shape.y + radius, radius, 0, Math.PI * 2);
+        const rx = Math.abs(shape.width || 60) / 2;
+        const ry = Math.abs(shape.height || 60) / 2;
+        const cx = shape.x + rx;
+        const cy = shape.y + ry;
+        if (ctx.ellipse) {
+          ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
+        } else {
+          ctx.arc(cx, cy, rx, 0, Math.PI * 2);
+        }
         if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
         ctx.stroke();
-      } else if (shape.type === 'line') {
+      } else if (shape.type === 'polygon') {
+        const w = shape.width || 100;
+        const h = shape.height || 100;
         ctx.beginPath();
-        ctx.moveTo(shape.x, shape.y);
-        ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+        ctx.moveTo(shape.x + w / 2, shape.y);
+        ctx.lineTo(shape.x + w, shape.y + h);
+        ctx.lineTo(shape.x, shape.y + h);
+        ctx.closePath();
+        if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
         ctx.stroke();
+      } else if (shape.type === 'diamond') {
+        const w = shape.width || 100;
+        const h = shape.height || 100;
+        ctx.beginPath();
+        ctx.moveTo(shape.x + w / 2, shape.y);
+        ctx.lineTo(shape.x + w, shape.y + h / 2);
+        ctx.lineTo(shape.x + w / 2, shape.y + h);
+        ctx.lineTo(shape.x, shape.y + h / 2);
+        ctx.closePath();
+        if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+      } else if (shape.type === 'hexagon') {
+        const w = shape.width || 100;
+        const h = shape.height || 100;
+        const cx = shape.x + w / 2;
+        const cy = shape.y + h / 2;
+        const rx = w / 2;
+        const ry = h / 2;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          const x = cx + rx * Math.cos(angle);
+          const y = cy + ry * Math.sin(angle);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+      } else if (shape.type === 'star') {
+        const w = shape.width || 100;
+        const h = shape.height || 100;
+        const cx = shape.x + w / 2;
+        const cy = shape.y + h / 2;
+        const outerR = Math.min(Math.abs(w), Math.abs(h)) / 2;
+        const innerR = outerR * 0.4;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 === 0 ? outerR : innerR;
+          const angle = (i * Math.PI) / 5 - Math.PI / 2;
+          const x = cx + r * Math.cos(angle);
+          const y = cy + r * Math.sin(angle);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
+        ctx.stroke();
+      } else if (shape.type === 'arrow' || shape.type === 'line') {
+        const startX = shape.x;
+        const startY = shape.y;
+        const endX = shape.x + (shape.width || 100);
+        const endY = shape.y + (shape.height || 100);
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        if (shape.type === 'arrow') {
+          const angle = Math.atan2(endY - startY, endX - startX);
+          const headLen = Math.max(12, shape.strokeWidth * 3);
+          ctx.fillStyle = shape.color;
+          ctx.beginPath();
+          ctx.moveTo(endX, endY);
+          ctx.lineTo(
+            endX - headLen * Math.cos(angle - Math.PI / 6),
+            endY - headLen * Math.sin(angle - Math.PI / 6)
+          );
+          ctx.lineTo(
+            endX - headLen * Math.cos(angle + Math.PI / 6),
+            endY - headLen * Math.sin(angle + Math.PI / 6)
+          );
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (shape.type === 'sticky') {
+        const width = shape.width || 200;
+        const height = shape.height || 130;
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(shape.x, shape.y, width, height);
+        ctx.fillStyle = '#fde047';
+        ctx.fillRect(shape.x, shape.y, width, 18);
+        ctx.fillStyle = '#854d0e';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('Sticky Note', shape.x + 8, shape.y + 13);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '13px sans-serif';
+        const text = shape.text || '';
+        ctx.fillText(text, shape.x + 10, shape.y + 40, width - 20);
+      } else if (shape.type === 'text') {
+        const text = shape.text || 'Text Box';
+        ctx.font = '18px sans-serif';
+        ctx.fillStyle = shape.color;
+        ctx.fillText(text, shape.x, shape.y);
       }
+
       ctx.restore();
     });
   }
 
-  // Trigger browser download
+  // 4. Draw Handwritten Strokes
+  if (page.strokes && page.strokes.length > 0) {
+    page.strokes.forEach((stroke) => {
+      const pts = stroke.smoothedPoints || stroke.points || [];
+      if (pts.length === 0) return;
+
+      ctx.save();
+      ctx.strokeStyle = stroke.color;
+      ctx.fillStyle = stroke.color;
+      ctx.globalAlpha = stroke.opacity ?? 1.0;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (stroke.tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'multiply';
+      }
+
+      if (pts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(pts[0].x, pts[0].y, Math.max(1, stroke.width / 2), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.lineWidth = stroke.width || 2;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    });
+  }
+
+  return canvas;
+};
+
+/**
+ * Downloads a single Page canvas as a PNG image file
+ */
+export const downloadPageAsPng = (page: Page, currentTheme?: ThemeId) => {
+  const canvas = renderPageToCanvas(page, currentTheme);
   const link = document.createElement('a');
-  link.download = `${page.title.replace(/\s+/g, '_')}_page.png`;
+  link.download = `${page.title.replace(/[/\\?%*:|"<>]/g, '_')}_page.png`;
   link.href = canvas.toDataURL('image/png');
   document.body.appendChild(link);
   link.click();
@@ -102,83 +293,99 @@ export const downloadPageAsPng = (page: Page, canvasWidth = 1200, canvasHeight =
 };
 
 /**
- * Downloads a single Page as a PDF document
+ * Downloads a single Page as an exact high-fidelity PDF document
  */
-export const downloadPageAsPdf = (page: Page, notebookTitle = 'Workspace Document') => {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+export const downloadPageAsPdf = (
+  page: Page,
+  notebookTitle = 'Workspace Document',
+  currentTheme?: ThemeId
+) => {
+  const canvas = renderPageToCanvas(page, currentTheme);
+  const imgData = canvas.toDataURL('image/png');
 
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, 595, 842, 'F');
+  const isLandscape = canvas.width > canvas.height;
+  const doc = new jsPDF({
+    orientation: isLandscape ? 'landscape' : 'portrait',
+    unit: 'pt',
+    format: 'a4',
+  });
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.setTextColor(30, 41, 59);
-  doc.text(page.title, 40, 50);
+  const pdfWidth = doc.internal.pageSize.getWidth();
+  const pdfHeight = doc.internal.pageSize.getHeight();
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(100, 116, 139);
-  doc.text(`Notebook: ${notebookTitle}`, 40, 72);
-  doc.text(`Exported on: ${new Date().toLocaleDateString()}`, 40, 88);
+  const imgRatio = canvas.width / canvas.height;
+  const pdfRatio = pdfWidth / pdfHeight;
 
-  doc.setDrawColor(226, 232, 240);
-  doc.line(40, 100, 555, 100);
+  let renderW = pdfWidth;
+  let renderH = pdfHeight;
+  let offsetX = 0;
+  let offsetY = 0;
 
-  // Render OCR text if available
-  if (page.ocrText) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(15, 23, 42);
-    doc.text('Handwriting OCR Recognition:', 40, 125);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(51, 65, 85);
-    doc.text(page.ocrText, 40, 145, { maxWidth: 515 });
+  if (imgRatio > pdfRatio) {
+    renderH = pdfWidth / imgRatio;
+    offsetY = (pdfHeight - renderH) / 2;
+  } else {
+    renderW = pdfHeight * imgRatio;
+    offsetX = (pdfWidth - renderW) / 2;
   }
 
-  doc.save(`${page.title.replace(/\s+/g, '_')}.pdf`);
+  doc.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH);
+  doc.save(`${page.title.replace(/[/\\?%*:|"<>]/g, '_')}.pdf`);
 };
 
 /**
- * Downloads an entire Notebook as a multi-page PDF document
+ * Downloads an entire Notebook as a multi-page PDF document containing exact drawings
  */
-export const downloadNotebookAsPdf = (notebook: Notebook) => {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+export const downloadNotebookAsPdf = (notebook: Notebook, currentTheme?: ThemeId) => {
+  if (!notebook.pages || notebook.pages.length === 0) {
+    alert('This notebook has no pages to download.');
+    return;
+  }
+
+  let doc: jsPDF | null = null;
 
   notebook.pages.forEach((page, index) => {
-    if (index > 0) doc.addPage();
+    const canvas = renderPageToCanvas(page, currentTheme);
+    const imgData = canvas.toDataURL('image/png');
+    const isLandscape = canvas.width > canvas.height;
 
-    doc.setFillColor(255, 255, 255);
-    doc.rect(0, 0, 595, 842, 'F');
+    if (index === 0) {
+      doc = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      });
+    } else if (doc) {
+      doc.addPage('a4', isLandscape ? 'landscape' : 'portrait');
+    }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(20);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`${notebook.title} - Page ${index + 1}: ${page.title}`, 40, 50);
+    if (doc) {
+      const pdfWidth = doc.internal.pageSize.getWidth();
+      const pdfHeight = doc.internal.pageSize.getHeight();
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Last updated: ${new Date(page.updatedAt).toLocaleString()}`, 40, 70);
+      const imgRatio = canvas.width / canvas.height;
+      const pdfRatio = pdfWidth / pdfHeight;
 
-    doc.setDrawColor(226, 232, 240);
-    doc.line(40, 80, 555, 80);
+      let renderW = pdfWidth;
+      let renderH = pdfHeight;
+      let offsetX = 0;
+      let offsetY = 0;
 
-    if (page.ocrText) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(30, 41, 59);
-      doc.text('Text Transcription:', 40, 105);
+      if (imgRatio > pdfRatio) {
+        renderH = pdfWidth / imgRatio;
+        offsetY = (pdfHeight - renderH) / 2;
+      } else {
+        renderW = pdfHeight * imgRatio;
+        offsetX = (pdfWidth - renderW) / 2;
+      }
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(71, 85, 105);
-      doc.text(page.ocrText, 40, 125, { maxWidth: 515 });
+      doc.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH);
     }
   });
 
-  doc.save(`${notebook.title.replace(/\s+/g, '_')}_Notebook.pdf`);
+  if (doc) {
+    doc.save(`${notebook.title.replace(/[/\\?%*:|"<>]/g, '_')}_Notebook.pdf`);
+  }
 };
 
 /**
@@ -187,7 +394,8 @@ export const downloadNotebookAsPdf = (notebook: Notebook) => {
 export const downloadSelectedFiles = (
   notebooks: Notebook[],
   selectedItemIds: string[],
-  importedPdfs: PDFItem[] = []
+  importedPdfs: PDFItem[] = [],
+  currentTheme?: ThemeId
 ) => {
   if (selectedItemIds.length === 0) {
     alert('Please select at least one file or notebook to download.');
@@ -196,23 +404,20 @@ export const downloadSelectedFiles = (
 
   let downloadedCount = 0;
 
-  // Process selected notebooks
   notebooks.forEach((nb) => {
     if (selectedItemIds.includes(nb.id)) {
-      downloadNotebookAsPdf(nb);
+      downloadNotebookAsPdf(nb, currentTheme);
       downloadedCount++;
     } else {
-      // Check individual selected pages inside notebook
       nb.pages.forEach((page) => {
         if (selectedItemIds.includes(page.id)) {
-          downloadPageAsPdf(page, nb.title);
+          downloadPageAsPdf(page, nb.title, currentTheme);
           downloadedCount++;
         }
       });
     }
   });
 
-  // Process selected imported PDFs
   importedPdfs.forEach((pdf) => {
     if (selectedItemIds.includes(pdf.id)) {
       const link = document.createElement('a');
@@ -229,3 +434,4 @@ export const downloadSelectedFiles = (
     alert('No downloadable files matched your selection.');
   }
 };
+

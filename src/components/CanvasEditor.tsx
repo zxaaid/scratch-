@@ -446,10 +446,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     template: PageTemplate
   ) => {
     ctx.save();
-    ctx.fillStyle = theme.canvasPaper.blank;
+    const isDarkTemplate = template === 'dark-ruled' || template === 'dark-grid';
+    ctx.fillStyle = isDarkTemplate ? '#1e293b' : '#ffffff';
     ctx.fillRect(paperX, paperY, width, height);
 
-    ctx.strokeStyle = theme.canvasPaper.ruledLine;
+    ctx.strokeStyle = isDarkTemplate ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0';
     ctx.lineWidth = 1 / zoom;
 
     if (template === 'ruled' || template === 'dark-ruled') {
@@ -754,27 +755,29 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
     const isFlexible = pageAspectRatio === 'flexible';
 
-    let pageWidth = pagePreset.width;
-    let pageHeight = pagePreset.height;
+    let pageWidth = pagePreset.width || 794;
+    let pageHeight = pagePreset.height || 1123;
 
     if (isFlexible || pageWidth === 0) {
-      pageWidth = Math.max(300, (width - 48) / zoom);
-      pageHeight = Math.max(300, (height - 48) / zoom);
+      pageWidth = 794;
+      pageHeight = 1123;
     }
 
-    const paperX = Math.max(24 / zoom, (width / zoom - pageWidth) / 2);
-    const paperY = Math.max(24 / zoom, (height / zoom - pageHeight) / 2);
+    const paperX = 0;
+    const paperY = 0;
 
-    // LAYER 1: A4 Paper Card (Fast 2-pass shadow for 120fps performance)
+    // LAYER 1: A4 Paper Card Drop Shadow & Crisp Paper Canvas
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
-    ctx.fillRect(paperX + 4 / zoom, paperY + 4 / zoom, pageWidth, pageHeight);
-    ctx.fillStyle = theme.canvasPaper.blank;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(paperX + 6 / zoom, paperY + 6 / zoom, pageWidth, pageHeight);
+
+    const isDarkTemplate = page?.template === 'dark-ruled' || page?.template === 'dark-grid';
+    ctx.fillStyle = isDarkTemplate ? '#1e293b' : '#ffffff';
     ctx.fillRect(paperX, paperY, pageWidth, pageHeight);
     ctx.restore();
 
     // Page Border Outline
-    ctx.strokeStyle = currentTheme.includes('dark') ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
+    ctx.strokeStyle = currentTheme.includes('dark') ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.18)';
     ctx.lineWidth = 1 / zoom;
     ctx.strokeRect(paperX, paperY, pageWidth, pageHeight);
 
@@ -948,6 +951,34 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
+  // Helper to center and fit A4 page in container
+  const centerAndFitPage = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+    const pWidth = pagePreset.width || 794;
+    const pHeight = pagePreset.height || 1123;
+
+    const fitZoom = Math.min((w - 64) / pWidth, (h - 64) / pHeight);
+    const targetZoom = Math.min(1.0, Math.max(0.35, fitZoom));
+
+    const targetPanX = Math.round((w - pWidth * targetZoom) / 2);
+    const targetPanY = Math.round((h - pHeight * targetZoom) / 2);
+
+    setZoom(targetZoom);
+    setPanX(targetPanX);
+    setPanY(targetPanY);
+  }, [pageAspectRatio]);
+
+  // Center page on select or aspect ratio change
+  useEffect(() => {
+    centerAndFitPage();
+  }, [page?.id, pageAspectRatio, centerAndFitPage]);
+
   // Container Resize Observer for auto-adjusting working area & page size
   useEffect(() => {
     const container = containerRef.current;
@@ -960,6 +991,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         if (w > 0 && h > 0 && (canvasRef.current.width !== w || canvasRef.current.height !== h)) {
           canvasRef.current.width = w;
           canvasRef.current.height = h;
+          centerAndFitPage();
         }
       }
     };
@@ -978,7 +1010,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       resizeObserver.disconnect();
       window.removeEventListener('resize', updateCanvasSize);
     };
-  }, []);
+  }, [centerAndFitPage]);
 
   // Pointer Down Handler
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1129,8 +1161,28 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   // Pointer Move Handler
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isPanning) {
-      setPanX(e.clientX - panStart.x);
-      setPanY(e.clientY - panStart.y);
+      const container = containerRef.current;
+      if (container) {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+        const pWidth = pagePreset.width || 794;
+        const pHeight = pagePreset.height || 1123;
+
+        const rawPanX = e.clientX - panStart.x;
+        const rawPanY = e.clientY - panStart.y;
+
+        const maxPanX = w - 100;
+        const minPanX = -(pWidth * zoom - 100);
+        const maxPanY = h - 100;
+        const minPanY = -(pHeight * zoom - 100);
+
+        setPanX(Math.min(maxPanX, Math.max(minPanX, rawPanX)));
+        setPanY(Math.min(maxPanY, Math.max(minPanY, rawPanY)));
+      } else {
+        setPanX(e.clientX - panStart.x);
+        setPanY(e.clientY - panStart.y);
+      }
       return;
     }
 
@@ -1370,22 +1422,46 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     e.preventDefault();
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+    const pWidth = pagePreset.width || 794;
+    const pHeight = pagePreset.height || 1123;
+
+    const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
+    const minZoom = Math.max(0.35, Math.min(fitZoom, 0.95));
+    const maxZoom = 4.0;
+
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
 
     setZoom((prevZoom) => {
-      const newZoom = Math.max(0.2, Math.min(10.0, prevZoom * zoomFactor));
+      const newZoom = Math.max(minZoom, Math.min(maxZoom, prevZoom * zoomFactor));
 
       const worldX = (mouseX - panX) / prevZoom;
       const worldY = (mouseY - panY) / prevZoom;
 
-      setPanX(mouseX - worldX * newZoom);
-      setPanY(mouseY - worldY * newZoom);
+      let targetPanX = mouseX - worldX * newZoom;
+      let targetPanY = mouseY - worldY * newZoom;
+
+      if (newZoom <= minZoom + 0.01) {
+        targetPanX = Math.round((container.clientWidth - pWidth * newZoom) / 2);
+        targetPanY = Math.round((container.clientHeight - pHeight * newZoom) / 2);
+      } else {
+        const maxPanX = container.clientWidth - 100;
+        const minPanX = -(pWidth * newZoom - 100);
+        const maxPanY = container.clientHeight - 100;
+        const minPanY = -(pHeight * newZoom - 100);
+        targetPanX = Math.min(maxPanX, Math.max(minPanX, targetPanX));
+        targetPanY = Math.min(maxPanY, Math.max(minPanY, targetPanY));
+      }
+
+      setPanX(targetPanX);
+      setPanY(targetPanY);
 
       return newZoom;
     });
@@ -1565,32 +1641,49 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* BOTTOM RIGHT VIEWPORT CONTROLS */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-1.5 p-1 rounded-lg bg-black/60 border border-white/10 text-white shadow-xl backdrop-blur-md text-xs">
+      <div className="absolute bottom-4 right-4 flex items-center gap-1.5 p-1 rounded-lg bg-black/75 border border-white/15 text-white shadow-2xl backdrop-blur-md text-xs z-30">
         <button
-          onClick={() => setZoom((z) => Math.max(0.2, z - 0.1))}
-          className="p-1.5 rounded hover:bg-white/20"
-          title="Zoom Out"
+          onClick={() => {
+            const container = containerRef.current;
+            if (!container) return;
+            const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+            const pWidth = pagePreset.width || 794;
+            const pHeight = pagePreset.height || 1123;
+            const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
+            const minZ = Math.max(0.35, Math.min(fitZoom, 0.95));
+            setZoom((z) => Math.max(minZ, z - 0.1));
+          }}
+          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
+          title="Zoom Out (Stops at Perfect A4 Size)"
         >
           <ZoomOut size={15} />
         </button>
-        <span className="w-12 text-center font-mono font-semibold">{Math.round(zoom * 100)}%</span>
+
         <button
-          onClick={() => setZoom((z) => Math.min(10.0, z + 0.1))}
-          className="p-1.5 rounded hover:bg-white/20"
+          onClick={centerAndFitPage}
+          className="px-2 py-1 font-mono font-semibold text-sky-400 hover:text-sky-300 hover:bg-white/10 rounded cursor-pointer transition-all"
+          title="Click to Reset & Center A4 Page"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+
+        <button
+          onClick={() => setZoom((z) => Math.min(4.0, z + 0.1))}
+          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
           title="Zoom In"
         >
           <ZoomIn size={15} />
         </button>
+
+        <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
+
         <button
-          onClick={() => {
-            setZoom(1.0);
-            setPanX(0);
-            setPanY(0);
-          }}
-          className="p-1.5 rounded hover:bg-white/20 text-gray-400 hover:text-white ml-1 border-l border-white/10"
-          title="Reset View"
+          onClick={centerAndFitPage}
+          className="px-2.5 py-1 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 hover:text-white flex items-center gap-1.5 transition-all text-[11px] font-medium cursor-pointer border border-sky-500/40"
+          title="Center & Fit Perfect A4 Page on Screen"
         >
-          <RotateCcw size={15} />
+          <FileText size={14} />
+          Center Page
         </button>
       </div>
 

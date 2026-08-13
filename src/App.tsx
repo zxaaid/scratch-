@@ -22,6 +22,7 @@ import {
 } from './types';
 import { INITIAL_WORKSPACE, INITIAL_PEN_PRESETS, INITIAL_TABLET_SETTINGS } from './data/initialWorkspace';
 import { PRACTICE_TEMPLATES } from './data/practiceTemplates';
+import { downloadPageAsPdf } from './lib/exportUtils';
 import { ActivityBar } from './components/ActivityBar';
 import { ExplorerPanel } from './components/ExplorerPanel';
 import { PracticePanel } from './components/PracticePanel';
@@ -369,21 +370,7 @@ export default function App() {
   // Export Document as PDF using jsPDF
   const handleExportPdf = () => {
     if (!activePage) return;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-    doc.setFontSize(20);
-    doc.text(activePage.title, 40, 50);
-
-    doc.setFontSize(12);
-    doc.text(`Notebook: ${activeNotebook?.title || 'Workspace'}`, 40, 75);
-    doc.text(`Exported on: ${new Date().toLocaleDateString()}`, 40, 95);
-
-    if (activePage.ocrText) {
-      doc.setFontSize(10);
-      doc.text('OCR Transcription:', 40, 130);
-      doc.text(activePage.ocrText, 40, 150, { maxWidth: 500 });
-    }
-
-    doc.save(`${activePage.title.replace(/\s+/g, '_')}.pdf`);
+    downloadPageAsPdf(activePage, activeNotebook?.title, currentTheme);
   };
 
   // AI Service Endpoints Caller

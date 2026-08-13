@@ -53,23 +53,23 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
   const handleDownloadPdf = () => {
     setShowDownloadMenu(false);
     if (activePage) {
-      downloadPageAsPdf(activePage, activeNotebook?.title);
+      downloadPageAsPdf(activePage, activeNotebook?.title, currentTheme);
     } else if (activeNotebook) {
-      downloadNotebookAsPdf(activeNotebook);
+      downloadNotebookAsPdf(activeNotebook, currentTheme);
     }
   };
 
   const handleDownloadPng = () => {
     setShowDownloadMenu(false);
     if (activePage) {
-      downloadPageAsPng(activePage);
+      downloadPageAsPng(activePage, currentTheme);
     }
   };
 
   const handleDownloadNotebook = () => {
     setShowDownloadMenu(false);
     if (activeNotebook) {
-      downloadNotebookAsPdf(activeNotebook);
+      downloadNotebookAsPdf(activeNotebook, currentTheme);
     }
   };
 

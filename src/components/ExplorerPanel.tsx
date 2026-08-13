@@ -58,7 +58,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   };
 
   const handleDownloadSelected = () => {
-    downloadSelectedFiles(workspace.notebooks, selectedItemIds, workspace.pdfs);
+    downloadSelectedFiles(workspace.notebooks, selectedItemIds, workspace.pdfs, currentTheme);
   };
 
   // Toggle folder expansion
@@ -238,7 +238,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           <button
             onClick={() => {
               if (workspace.notebooks.length > 0) {
-                downloadNotebookAsPdf(workspace.notebooks[0]);
+                downloadNotebookAsPdf(workspace.notebooks[0], currentTheme);
               }
             }}
             className="w-full py-1 px-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded flex items-center justify-center gap-1.5 transition-all text-[11px] cursor-pointer border border-white/10"
@@ -335,6 +335,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
                       onDeleteNotebook={handleDeleteNotebook}
                       onToggleFavorite={handleToggleFavorite}
                       theme={theme}
+                      currentTheme={currentTheme}
                       selectedItemIds={selectedItemIds}
                       onToggleSelect={toggleSelectItem}
                     />
@@ -363,6 +364,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
               onDeleteNotebook={handleDeleteNotebook}
               onToggleFavorite={handleToggleFavorite}
               theme={theme}
+              currentTheme={currentTheme}
               selectedItemIds={selectedItemIds}
               onToggleSelect={toggleSelectItem}
             />
@@ -380,6 +382,7 @@ interface NotebookTreeItemProps {
   onDeleteNotebook: (e: React.MouseEvent, id: string) => void;
   onToggleFavorite: (e: React.MouseEvent, id: string) => void;
   theme: any;
+  currentTheme: ThemeId;
   selectedItemIds: string[];
   onToggleSelect: (id: string, e?: React.MouseEvent) => void;
 }
@@ -392,6 +395,7 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
   onDeleteNotebook,
   onToggleFavorite,
   theme,
+  currentTheme,
   selectedItemIds,
   onToggleSelect,
 }) => {
@@ -425,7 +429,7 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              downloadNotebookAsPdf(notebook);
+              downloadNotebookAsPdf(notebook, currentTheme);
             }}
             className="p-0.5 text-gray-400 hover:text-emerald-400"
             title="Download Notebook as PDF"
@@ -491,7 +495,7 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    downloadPageAsPdf(page, notebook.title);
+                    downloadPageAsPdf(page, notebook.title, currentTheme);
                   }}
                   className="opacity-0 group-hover/page:opacity-100 p-0.5 text-gray-400 hover:text-emerald-400"
                   title="Download Page PDF"
