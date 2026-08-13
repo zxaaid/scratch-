@@ -48,7 +48,7 @@ export default function App() {
   const [activeActivityTab, setActiveActivityTab] = useState<ActivityTab>('explorer');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
-  const [isSidebarShrunk, setIsSidebarShrunk] = useState<boolean>(false);
+  const [isDraggingSidebar, setIsDraggingSidebar] = useState<boolean>(false);
   const isDraggingSidebarRef = useRef<boolean>(false);
 
   // Auto Tablet responsiveness on initial load & window resize
@@ -57,8 +57,7 @@ export default function App() {
       if (window.innerWidth < 768) {
         setIsSidebarOpen(false); // Collapsed by default on small mobile screens
       } else if (window.innerWidth < 1024) {
-        setIsSidebarShrunk(true); // Compact view on tablets for maximum canvas space
-        setSidebarWidth(180);
+        setSidebarWidth(140); // Compact view on tablets for maximum canvas space
       }
     };
     handleResize();
@@ -68,6 +67,7 @@ export default function App() {
 
   const handleSidebarResizeStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     isDraggingSidebarRef.current = true;
+    setIsDraggingSidebar(true);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
@@ -75,15 +75,9 @@ export default function App() {
       if (!isDraggingSidebarRef.current) return;
       // ActivityBar width is 48px
       const rawWidth = clientX - 48;
-      if (rawWidth < 60) {
-        // Dragged towards far left -> collapse file manager panel to maximize working area!
-        setIsSidebarOpen(false);
-      } else {
-        setIsSidebarOpen(true);
-        const newWidth = Math.max(110, Math.min(650, rawWidth));
-        setSidebarWidth(newWidth);
-        setIsSidebarShrunk(newWidth < 180);
-      }
+      // Smooth fluid drag between 80px and 650px without collapsing automatically
+      const newWidth = Math.max(80, Math.min(650, rawWidth));
+      setSidebarWidth(newWidth);
     };
 
     const onMouseMove = (moveEvent: MouseEvent) => handleMove(moveEvent.clientX);
@@ -95,6 +89,7 @@ export default function App() {
 
     const handleUp = () => {
       isDraggingSidebarRef.current = false;
+      setIsDraggingSidebar(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       window.removeEventListener('mousemove', onMouseMove);
@@ -114,15 +109,7 @@ export default function App() {
   }, []);
 
   const handleToggleSidebarShrink = useCallback(() => {
-    setIsSidebarShrunk((prev) => {
-      if (!prev) {
-        setSidebarWidth(140);
-        return true;
-      } else {
-        setSidebarWidth(260);
-        return false;
-      }
-    });
+    setSidebarWidth((prev) => (prev <= 160 ? 260 : 130));
   }, []);
 
   // Tabs State
@@ -636,8 +623,8 @@ export default function App() {
         {/* Collapsible & Shrinkable Sidebar Panel */}
         {isSidebarOpen && (
           <div
-            className="h-full flex shrink-0 relative transition-all duration-100"
-            style={{ width: isSidebarShrunk ? 140 : sidebarWidth }}
+            className={`h-full flex shrink-0 relative ${isDraggingSidebar ? '' : 'transition-all duration-150'}`}
+            style={{ width: sidebarWidth }}
           >
             {activeActivityTab === 'explorer' && (
               <ExplorerPanel
@@ -646,7 +633,7 @@ export default function App() {
                 activePageId={activeTab?.pageId}
                 onSelectPage={handleSelectPage}
                 currentTheme={currentTheme}
-                isShrunk={isSidebarShrunk}
+                isShrunk={sidebarWidth < 180}
                 onToggleShrink={handleToggleSidebarShrink}
               />
             )}
