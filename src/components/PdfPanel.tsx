@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Upload, Plus, Download, Tag, StickyNote, Trash2, Eye } from 'lucide-react';
+import { FileText, Upload, Plus, Tag, StickyNote, Trash2, Eye } from 'lucide-react';
 import { PDFItem, PDFAnnotationPage, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
 

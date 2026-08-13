@@ -280,6 +280,101 @@ export const renderPageToCanvas = (
 };
 
 /**
+ * Generates an ArrayBuffer of a Page as a PDF document for direct local disk saving
+ */
+export const generatePagePdfArrayBuffer = (
+  page: Page,
+  currentTheme: ThemeId = 'vscode-dark'
+): ArrayBuffer => {
+  const canvas = renderPageToCanvas(page, currentTheme);
+  const imgData = canvas.toDataURL('image/png');
+
+  const isLandscape = canvas.width > canvas.height;
+  const doc = new jsPDF({
+    orientation: isLandscape ? 'landscape' : 'portrait',
+    unit: 'pt',
+    format: 'a4',
+  });
+
+  const pdfWidth = doc.internal.pageSize.getWidth();
+  const pdfHeight = doc.internal.pageSize.getHeight();
+
+  const imgRatio = canvas.width / canvas.height;
+  const pdfRatio = pdfWidth / pdfHeight;
+
+  let renderW = pdfWidth;
+  let renderH = pdfHeight;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (imgRatio > pdfRatio) {
+    renderH = pdfWidth / imgRatio;
+    offsetY = (pdfHeight - renderH) / 2;
+  } else {
+    renderW = pdfHeight * imgRatio;
+    offsetX = (pdfWidth - renderW) / 2;
+  }
+
+  doc.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH);
+  return doc.output('arraybuffer');
+};
+
+/**
+ * Generates an ArrayBuffer of a full Notebook as a multi-page PDF document for direct local disk saving
+ */
+export const generateNotebookPdfArrayBuffer = (
+  notebook: Notebook,
+  currentTheme: ThemeId = 'vscode-dark'
+): ArrayBuffer | null => {
+  if (!notebook.pages || notebook.pages.length === 0) {
+    return null;
+  }
+
+  let doc: jsPDF | null = null;
+
+  notebook.pages.forEach((page, index) => {
+    const canvas = renderPageToCanvas(page, currentTheme);
+    const imgData = canvas.toDataURL('image/png');
+    const isLandscape = canvas.width > canvas.height;
+
+    if (index === 0) {
+      doc = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      });
+    } else if (doc) {
+      doc.addPage('a4', isLandscape ? 'landscape' : 'portrait');
+    }
+
+    if (doc) {
+      const pdfWidth = doc.internal.pageSize.getWidth();
+      const pdfHeight = doc.internal.pageSize.getHeight();
+
+      const imgRatio = canvas.width / canvas.height;
+      const pdfRatio = pdfWidth / pdfHeight;
+
+      let renderW = pdfWidth;
+      let renderH = pdfHeight;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (imgRatio > pdfRatio) {
+        renderH = pdfWidth / imgRatio;
+        offsetY = (pdfHeight - renderH) / 2;
+      } else {
+        renderW = pdfHeight * imgRatio;
+        offsetX = (pdfWidth - renderW) / 2;
+      }
+
+      doc.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH);
+    }
+  });
+
+  return doc ? doc.output('arraybuffer') : null;
+};
+
+/**
  * Downloads a single Page canvas as a PNG image file
  */
 export const downloadPageAsPng = (page: Page, currentTheme?: ThemeId) => {

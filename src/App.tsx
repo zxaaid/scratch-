@@ -22,7 +22,6 @@ import {
 } from './types';
 import { INITIAL_WORKSPACE, INITIAL_PEN_PRESETS, INITIAL_TABLET_SETTINGS } from './data/initialWorkspace';
 import { PRACTICE_TEMPLATES } from './data/practiceTemplates';
-import { downloadPageAsPdf } from './lib/exportUtils';
 import { ActivityBar } from './components/ActivityBar';
 import { ExplorerPanel } from './components/ExplorerPanel';
 import { PracticePanel } from './components/PracticePanel';
@@ -575,10 +574,14 @@ export default function App() {
     setHandwritingMode(preset.handwritingMode);
   };
 
-  // Export Document as PDF using jsPDF
-  const handleExportPdf = () => {
-    if (!activePage) return;
-    downloadPageAsPdf(activePage, activeNotebook?.title, currentTheme);
+  // Save / Sync Workspace as PDFs to local disk
+  const handleExportPdf = async () => {
+    if (localFsState.dirHandle) {
+      await handleSyncLocalDirectory();
+      alert('Your notebook and pages have been saved as PDF documents in your local folder!');
+    } else {
+      await handleConnectLocalDirectory();
+    }
   };
 
   // AI Service Endpoints Caller
@@ -749,7 +752,7 @@ export default function App() {
     { id: 'act_beautify', title: 'Beautify Current Page (AI)', category: 'AI', run: () => handleRunAiAction('beautify') },
     { id: 'act_ocr', title: 'Run OCR to Markdown', category: 'AI', run: () => handleRunAiAction('ocr') },
     { id: 'act_summarize', title: 'Summarize Note', category: 'AI', run: () => handleRunAiAction('summarize') },
-    { id: 'act_export_pdf', title: 'Export Notebook to PDF', category: 'Export', shortcut: 'Ctrl+Shift+E', run: handleExportPdf },
+    { id: 'act_export_pdf', title: 'Sync / Save PDF Notes to Local Folder', category: 'Storage', shortcut: 'Ctrl+Shift+S', run: handleExportPdf },
     { id: 'act_mode1', title: 'Set Mode 1: Pure Curve Smoothing', category: 'Handwriting Engine', run: () => setHandwritingMode(1) },
     { id: 'act_mode2', title: 'Set Mode 2: Style Beautification', category: 'Handwriting Engine', run: () => setHandwritingMode(2) },
     { id: 'act_mode3', title: 'Set Mode 3: Elegant Script Conversion', category: 'Handwriting Engine', run: () => setHandwritingMode(3) },
