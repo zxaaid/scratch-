@@ -51,34 +51,66 @@ export default function App() {
   const [isSidebarShrunk, setIsSidebarShrunk] = useState<boolean>(false);
   const isDraggingSidebarRef = useRef<boolean>(false);
 
-  const handleSidebarResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  // Auto Tablet responsiveness on initial load & window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setIsSidebarOpen(false); // Collapsed by default on small mobile screens
+      } else if (window.innerWidth < 1024) {
+        setIsSidebarShrunk(true); // Compact view on tablets for maximum canvas space
+        setSidebarWidth(180);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     isDraggingSidebarRef.current = true;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    const handleMove = (clientX: number) => {
       if (!isDraggingSidebarRef.current) return;
       // ActivityBar width is 48px
-      const newWidth = Math.max(120, Math.min(600, moveEvent.clientX - 48));
-      setSidebarWidth(newWidth);
-      if (newWidth < 170) {
-        setIsSidebarShrunk(true);
+      const rawWidth = clientX - 48;
+      if (rawWidth < 60) {
+        // Dragged towards far left -> collapse file manager panel to maximize working area!
+        setIsSidebarOpen(false);
       } else {
-        setIsSidebarShrunk(false);
+        setIsSidebarOpen(true);
+        const newWidth = Math.max(110, Math.min(650, rawWidth));
+        setSidebarWidth(newWidth);
+        setIsSidebarShrunk(newWidth < 180);
       }
     };
 
-    const handleMouseUp = () => {
+    const onMouseMove = (moveEvent: MouseEvent) => handleMove(moveEvent.clientX);
+    const onTouchMove = (touchEvent: TouchEvent) => {
+      if (touchEvent.touches.length > 0) {
+        handleMove(touchEvent.touches[0].clientX);
+      }
+    };
+
+    const handleUp = () => {
       isDraggingSidebarRef.current = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', handleUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', handleUp);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', handleUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', handleUp);
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarOpen((prev) => !prev);
   }, []);
 
   const handleToggleSidebarShrink = useCallback(() => {
@@ -590,13 +622,11 @@ export default function App() {
         <ActivityBar
           activeTab={activeActivityTab}
           setActiveTab={(tab) => {
-            if (activeActivityTab === tab && isSidebarOpen) {
-              setIsSidebarOpen(false);
-            } else {
-              setActiveActivityTab(tab);
-              setIsSidebarOpen(true);
-            }
+            setActiveActivityTab(tab);
+            setIsSidebarOpen(true);
           }}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
           currentTheme={currentTheme}
           setTheme={setTheme}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
@@ -606,7 +636,7 @@ export default function App() {
         {/* Collapsible & Shrinkable Sidebar Panel */}
         {isSidebarOpen && (
           <div
-            className="h-full flex shrink-0 relative transition-all duration-150"
+            className="h-full flex shrink-0 relative transition-all duration-100"
             style={{ width: isSidebarShrunk ? 140 : sidebarWidth }}
           >
             {activeActivityTab === 'explorer' && (
@@ -670,13 +700,14 @@ export default function App() {
               />
             )}
 
-            {/* Draggable Vertical Resize Bar on Right Edge */}
+            {/* Draggable Vertical Resize Bar on Right Edge (Supports Mouse & Touch on Tablets) */}
             <div
-              onMouseDown={handleSidebarResizeMouseDown}
-              className="absolute top-0 right-0 w-2 h-full cursor-col-resize hover:bg-sky-500/50 active:bg-sky-500 z-30 group flex items-center justify-center transition-colors"
-              title="Drag to adjust sidebar width (shrink/expand)"
+              onMouseDown={handleSidebarResizeStart}
+              onTouchStart={handleSidebarResizeStart}
+              className="absolute top-0 -right-2 w-4 h-full cursor-col-resize hover:bg-sky-500/50 active:bg-sky-500 z-30 group flex items-center justify-center transition-colors touch-none"
+              title="Drag towards left to shrink/collapse sidebar and maximize working area size"
             >
-              <div className="w-[2px] h-8 rounded-full bg-white/20 group-hover:bg-sky-300" />
+              <div className="w-[3px] h-10 rounded-full bg-white/30 group-hover:bg-sky-300 group-active:bg-sky-200 shadow-sm" />
             </div>
           </div>
         )}

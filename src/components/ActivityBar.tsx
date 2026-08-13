@@ -17,6 +17,8 @@ import { THEMES } from '../lib/themes';
 interface ActivityBarProps {
   activeTab: ActivityTab;
   setActiveTab: (tab: ActivityTab) => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
   currentTheme: ThemeId;
   setTheme: (theme: ThemeId) => void;
   onOpenCommandPalette: () => void;
@@ -26,6 +28,8 @@ interface ActivityBarProps {
 export const ActivityBar: React.FC<ActivityBarProps> = ({
   activeTab,
   setActiveTab,
+  isSidebarOpen = true,
+  onToggleSidebar,
   currentTheme,
   setTheme,
   onOpenCommandPalette,
@@ -66,16 +70,25 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         </div>
 
         {items.map((item) => {
-          const isActive = activeTab === item.id;
+          const isActive = activeTab === item.id && isSidebarOpen;
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className="relative w-10 h-10 flex items-center justify-center rounded-md transition-colors"
+              onClick={() => {
+                if (activeTab === item.id) {
+                  onToggleSidebar?.();
+                } else {
+                  setActiveTab(item.id);
+                  if (!isSidebarOpen) {
+                    onToggleSidebar?.();
+                  }
+                }
+              }}
+              className="relative w-10 h-10 flex items-center justify-center rounded-md transition-colors cursor-pointer"
               style={{
                 color: isActive ? theme.activityBarActiveFg : theme.activityBarFg,
               }}
-              title={item.label}
+              title={`${item.label} (${isActive ? 'Click to collapse' : 'Click to open'})`}
             >
               {isActive && (
                 <div

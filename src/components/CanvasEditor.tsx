@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Point,
   Stroke,
@@ -1429,11 +1429,29 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   const currentSelectionBounds = getSelectionBounds();
 
+  // Custom Dot Cursor SVG Generator (Precise Dot Pointer instead of cross)
+  const dotCursorStyle = useMemo(() => {
+    if (tool === 'cursor') return 'default';
+    if (tool === 'eraser') {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="rgba(244,63,94,0.25)" stroke="%23f43f5e" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5" fill="%23f43f5e"/></svg>`;
+      return `url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}') 10 10, pointer`;
+    }
+    
+    // Dynamic Dot matching active ink color and stroke thickness
+    const dotRadius = Math.max(3.5, Math.min(8, strokeWidth * 1.1));
+    const size = Math.max(18, Math.ceil(dotRadius * 3));
+    const center = Math.floor(size / 2);
+    const strokeHex = (color || '#1a1a2e').replace('#', '%23');
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${dotRadius}" fill="${strokeHex}" stroke="%23ffffff" stroke-width="1.5"/><circle cx="${center}" cy="${center}" r="${Math.max(1, dotRadius - 2.5)}" fill="%23ffffff" opacity="0.85"/></svg>`;
+    return `url('data:image/svg+xml;utf8,${svg}') ${center} ${center}, crosshair`;
+  }, [tool, color, strokeWidth]);
+
   return (
     <div
       ref={containerRef}
-      className="relative flex-1 h-full overflow-hidden select-none cursor-crosshair"
-      style={{ backgroundColor: theme.editorBg }}
+      className="relative flex-1 h-full overflow-hidden select-none"
+      style={{ backgroundColor: theme.editorBg, cursor: dotCursorStyle }}
       onWheel={handleWheel}
     >
       <canvas
