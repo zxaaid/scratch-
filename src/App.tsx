@@ -198,7 +198,44 @@ export default function App() {
           isSaving: true,
           error: null,
         });
-        await saveWorkspaceToLocalFolder(res.handle, workspace);
+
+        // If workspace is empty, populate a folder and notebook for the linked directory
+        let currentWk = workspace;
+        if (workspace.folders.length === 0 && workspace.notebooks.length === 0) {
+          const newFolder = {
+            id: `f_${Date.now()}`,
+            title: res.name || 'My Local Folder',
+            isExpanded: true,
+          };
+          const newNotebook = {
+            id: `nb_${Date.now()}`,
+            title: `${res.name || 'Notes'} Overview`,
+            folderId: newFolder.id,
+            tags: ['Notes'],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            pages: [
+              {
+                id: `pg_${Date.now()}`,
+                title: 'Page 1',
+                template: 'ruled' as const,
+                strokes: [],
+                shapes: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          };
+          currentWk = {
+            ...workspace,
+            folders: [newFolder],
+            notebooks: [newNotebook],
+          };
+          setWorkspace(currentWk);
+          handleSelectPage(newNotebook.id, newNotebook.pages[0].id);
+        }
+
+        await saveWorkspaceToLocalFolder(res.handle, currentWk);
         setLocalFsState((prev) => ({
           ...prev,
           isSaving: false,

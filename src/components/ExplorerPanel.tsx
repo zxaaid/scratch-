@@ -403,6 +403,48 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
           )}
         </div>
 
+        {/* Empty State when all files and folders are deleted */}
+        {workspace.folders.length === 0 && workspace.notebooks.length === 0 && (
+          <div className="flex flex-col items-center justify-center p-4 text-center my-6 space-y-3 bg-black/10 rounded-lg border border-dashed border-white/10 mx-1">
+            <div className="p-3 bg-sky-500/10 text-sky-400 rounded-full">
+              <FolderOpen size={28} />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-200">No Open Files or Folders</h4>
+              <p className="text-[11px] text-gray-400 leading-relaxed max-w-[200px]">
+                You have no active files or folders in your explorer.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 w-full pt-2">
+              <button
+                onClick={onConnectLocalDirectory}
+                className="w-full py-2 px-2.5 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer border border-sky-400/30"
+                title="Redirects to system File Explorer where you can create a folder or select an existing one"
+              >
+                <FolderOpen size={14} />
+                <span>Open / Create Folder</span>
+              </button>
+              <button
+                onClick={handleAddFolder}
+                className="w-full py-1.5 px-2.5 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 rounded text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                title="Create a new folder in workspace"
+              >
+                <FolderPlus size={14} className="text-amber-400" />
+                <span>New Folder</span>
+              </button>
+              <button
+                onClick={() => handleNewFile()}
+                className="w-full py-1.5 px-2.5 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 rounded text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                title="Create a new file / notebook"
+              >
+                <FilePlus size={14} className="text-sky-400" />
+                <span>New File</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Folders */}
         {workspace.folders.map((folder) => {
           const folderNotebooks = workspace.notebooks.filter(
