@@ -759,8 +759,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     let pageHeight = pagePreset.height || 1123;
 
     if (isFlexible || pageWidth === 0) {
-      pageWidth = 794;
-      pageHeight = 1123;
+      pageWidth = Math.max(300, (width - 48) / zoom);
+      pageHeight = Math.max(300, (height - 48) / zoom);
     }
 
     const paperX = 0;
@@ -951,7 +951,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
-  // Helper to center and fit A4 page in container
+  // Helper to center and fit page in container
   const centerAndFitPage = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -959,11 +959,20 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
 
+    const isFlexible = pageAspectRatio === 'flexible';
     const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-portrait'];
+
+    if (isFlexible) {
+      setZoom(1.0);
+      setPanX(24);
+      setPanY(24);
+      return;
+    }
+
     const pWidth = pagePreset.width || 794;
     const pHeight = pagePreset.height || 1123;
 
-    const fitZoom = Math.min((w - 64) / pWidth, (h - 64) / pHeight);
+    const fitZoom = Math.min((w - 48) / pWidth, (h - 48) / pHeight);
     const targetZoom = Math.min(1.0, Math.max(0.35, fitZoom));
 
     const targetPanX = Math.round((w - pWidth * targetZoom) / 2);

@@ -175,7 +175,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             ))}
           </select>
           <p className="text-[10px] text-gray-400">
-            Selected size: {PAGE_ASPECT_PRESETS[pageAspectRatio].width} × {PAGE_ASPECT_PRESETS[pageAspectRatio].height} px
+            Selected size:{' '}
+            {pageAspectRatio === 'flexible'
+              ? 'Auto-Fit Working Area (Window)'
+              : `${PAGE_ASPECT_PRESETS[pageAspectRatio].width} × ${PAGE_ASPECT_PRESETS[pageAspectRatio].height} px`}
           </p>
         </div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tablet, CheckCircle, Palette, ZoomIn, Feather } from 'lucide-react';
+import { Tablet, CheckCircle, Palette, ZoomIn, Feather, HardDrive, Unplug } from 'lucide-react';
 import { PenToolType, HandwritingMode, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
 
@@ -11,6 +11,8 @@ interface StatusBarProps {
   currentTheme: ThemeId;
   tabletConnected: boolean;
   saveStatusText?: string;
+  localFolderName?: string | null;
+  onConnectLocalDirectory?: () => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -21,6 +23,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   currentTheme,
   tabletConnected,
   saveStatusText = 'Auto-saved',
+  localFolderName,
+  onConnectLocalDirectory,
 }) => {
   const theme = THEMES[currentTheme];
 
@@ -57,6 +61,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <CheckCircle size={11} className="text-emerald-300" />
           <span>{saveStatusText}</span>
         </div>
+
+        {/* Local Folder Indicator */}
+        {localFolderName && (
+          <div className="flex items-center gap-1 bg-emerald-950/40 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/20 font-medium text-[10px]">
+            <HardDrive size={10} className="text-emerald-400" />
+            <span>/{localFolderName}</span>
+          </div>
+        )}
       </div>
 
       {/* Right Items */}

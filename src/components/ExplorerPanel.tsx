@@ -7,8 +7,8 @@ import {
   FilePlus,
   Trash2,
   Edit2,
-  Copy,
-  Star,
+  Square,
+  CheckSquare,
   Folder,
   FolderOpen,
   Book,
@@ -19,12 +19,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Download,
-  CheckSquare,
-  Square,
+  Star,
+  RefreshCw,
+  HardDrive,
 } from 'lucide-react';
 import { Workspace, Folder as FolderType, Notebook, Page, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
 import { downloadNotebookAsPdf, downloadPageAsPdf, downloadSelectedFiles } from '../lib/exportUtils';
+import { LocalFileSystemState } from '../lib/fileSystemAccess';
 
 interface ExplorerPanelProps {
   workspace: Workspace;
@@ -34,6 +36,13 @@ interface ExplorerPanelProps {
   currentTheme: ThemeId;
   isShrunk?: boolean;
   onToggleShrink?: () => void;
+  localFsState: LocalFileSystemState;
+  onConnectLocalDirectory: () => void;
+  onDisconnectLocalDirectory: () => void;
+  onToggleAutoSave: () => void;
+  onCreateLocalSubfolder: () => void;
+  onCreateLocalFile: () => void;
+  onSyncLocalDirectory: () => void;
 }
 
 export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
@@ -44,6 +53,10 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   currentTheme,
   isShrunk,
   onToggleShrink,
+  localFsState,
+  onConnectLocalDirectory,
+  onDisconnectLocalDirectory,
+  onSyncLocalDirectory,
 }) => {
   const theme = THEMES[currentTheme];
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,11 +86,11 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
 
   // Add Folder
   const handleAddFolder = () => {
-    const title = prompt('Enter new folder name:', 'New Subject Folder');
-    if (!title) return;
+    const title = prompt('Enter new folder name:', 'New Folder');
+    if (!title || !title.trim()) return;
     const newFolder: FolderType = {
       id: `f_${Date.now()}`,
-      title,
+      title: title.trim(),
       isExpanded: true,
     };
     setWorkspace((prev) => ({
@@ -86,13 +99,35 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     }));
   };
 
-  // Add Notebook
-  const handleAddNotebook = (folderId?: string) => {
-    const title = prompt('Enter new notebook title:', 'Untitled Notebook');
-    if (!title) return;
+  // Rename Folder
+  const handleRenameFolder = (e: React.MouseEvent, folderId: string, currentTitle: string) => {
+    e.stopPropagation();
+    const newTitle = prompt('Rename folder:', currentTitle);
+    if (!newTitle || !newTitle.trim() || newTitle === currentTitle) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      folders: prev.folders.map((f) => (f.id === folderId ? { ...f, title: newTitle.trim() } : f)),
+    }));
+  };
+
+  // Delete Folder
+  const handleDeleteFolder = (e: React.MouseEvent, folderId: string) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this folder and its notebooks?')) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      folders: prev.folders.filter((f) => f.id !== folderId),
+      notebooks: prev.notebooks.filter((nb) => nb.folderId !== folderId),
+    }));
+  };
+
+  // Add Notebook or Page (New File)
+  const handleNewFile = (folderId?: string) => {
+    const title = prompt('Enter file/notebook title:', 'Untitled Note');
+    if (!title || !title.trim()) return;
     const newNotebook: Notebook = {
       id: `nb_${Date.now()}`,
-      title,
+      title: title.trim(),
       folderId,
       tags: ['Notes'],
       createdAt: new Date().toISOString(),
@@ -116,14 +151,35 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     onSelectPage(newNotebook.id, newNotebook.pages[0].id);
   };
 
+  // Rename Notebook
+  const handleRenameNotebook = (e: React.MouseEvent, notebookId: string, currentTitle: string) => {
+    e.stopPropagation();
+    const newTitle = prompt('Rename notebook:', currentTitle);
+    if (!newTitle || !newTitle.trim() || newTitle === currentTitle) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      notebooks: prev.notebooks.map((nb) => (nb.id === notebookId ? { ...nb, title: newTitle.trim() } : nb)),
+    }));
+  };
+
+  // Delete Notebook
+  const handleDeleteNotebook = (e: React.MouseEvent, notebookId: string) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this notebook?')) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      notebooks: prev.notebooks.filter((nb) => nb.id !== notebookId),
+    }));
+  };
+
   // Add Page to Notebook
   const handleAddPage = (notebookId: string) => {
     const title = prompt('Enter new page title:', `Page ${Date.now().toString().slice(-3)}`);
-    if (!title) return;
+    if (!title || !title.trim()) return;
 
     const newPage: Page = {
       id: `pg_${Date.now()}`,
-      title,
+      title: title.trim(),
       template: 'ruled',
       strokes: [],
       shapes: [],
@@ -142,13 +198,42 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     onSelectPage(notebookId, newPage.id);
   };
 
-  // Delete Notebook
-  const handleDeleteNotebook = (e: React.MouseEvent, notebookId: string) => {
+  // Rename Page
+  const handleRenamePage = (e: React.MouseEvent, notebookId: string, pageId: string, currentTitle: string) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this notebook?')) return;
+    const newTitle = prompt('Rename page:', currentTitle);
+    if (!newTitle || !newTitle.trim() || newTitle === currentTitle) return;
     setWorkspace((prev) => ({
       ...prev,
-      notebooks: prev.notebooks.filter((nb) => nb.id !== notebookId),
+      notebooks: prev.notebooks.map((nb) => {
+        if (nb.id !== notebookId) return nb;
+        return {
+          ...nb,
+          pages: nb.pages.map((pg) => (pg.id === pageId ? { ...pg, title: newTitle.trim() } : pg)),
+        };
+      }),
+    }));
+  };
+
+  // Delete Page
+  const handleDeletePage = (e: React.MouseEvent, notebookId: string, pageId: string) => {
+    e.stopPropagation();
+    const notebook = workspace.notebooks.find((nb) => nb.id === notebookId);
+    if (!notebook) return;
+    if (notebook.pages.length <= 1) {
+      alert('A notebook must contain at least one page.');
+      return;
+    }
+    if (!confirm('Are you sure you want to delete this page?')) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      notebooks: prev.notebooks.map((nb) => {
+        if (nb.id !== notebookId) return nb;
+        return {
+          ...nb,
+          pages: nb.pages.filter((pg) => pg.id !== pageId),
+        };
+      }),
     }));
   };
 
@@ -177,37 +262,63 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
         borderColor: theme.border,
       }}
     >
-      {/* Header Bar */}
+      {/* Clean VS Code-style Header Bar */}
       <div
-        className="px-3 py-2.5 font-bold tracking-wider uppercase flex items-center justify-between border-b"
+        className="px-3 py-2 font-bold tracking-wider uppercase flex items-center justify-between border-b"
         style={{
           backgroundColor: theme.sidebarHeaderBg,
           borderColor: theme.border,
         }}
       >
-        <span className="truncate">{isShrunk ? 'Exp.' : 'Explorer'}</span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{isShrunk ? 'Exp.' : 'Explorer'}</span>
+          {localFsState.dirHandle && (
+            <span
+              className="px-1.5 py-0.5 rounded text-[9px] font-normal bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 truncate"
+              title={`Linked to local disk: ${localFsState.folderName}`}
+            >
+              /{localFsState.folderName}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => handleNewFile()}
+            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+            title="New File / Notebook"
+          >
+            <FilePlus size={15} />
+          </button>
           <button
             onClick={handleAddFolder}
-            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white"
+            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
             title="New Folder"
           >
             <FolderPlus size={15} />
           </button>
           <button
-            onClick={() => handleAddNotebook()}
-            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white"
-            title="New Notebook"
+            onClick={onConnectLocalDirectory}
+            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-sky-300 transition-colors"
+            title={localFsState.dirHandle ? `Open/Switch Local Folder (Current: ${localFsState.folderName})` : 'Open Local Folder'}
           >
-            <BookPlus size={15} />
+            <FolderOpen size={15} />
           </button>
+          {localFsState.dirHandle && (
+            <button
+              onClick={onSyncLocalDirectory}
+              className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-emerald-300 transition-colors"
+              title="Sync Workspace with Local Folder"
+            >
+              <RefreshCw size={14} className={localFsState.isSaving ? 'animate-spin text-emerald-400' : ''} />
+            </button>
+          )}
           {onToggleShrink && (
             <button
               onClick={onToggleShrink}
-              className="p-1 rounded hover:bg-white/10 text-sky-400 hover:text-sky-300 ml-1"
-              title={isShrunk ? 'Expand Explorer Panel' : 'Shrink Explorer Panel to Maximize Working Area'}
+              className="p-1 rounded hover:bg-white/10 text-sky-400 hover:text-sky-300 ml-1 transition-colors"
+              title={isShrunk ? 'Expand Explorer Panel' : 'Shrink Explorer Panel'}
             >
-              {isShrunk ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              {isShrunk ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
             </button>
           )}
         </div>
@@ -279,8 +390,17 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       {/* Workspace Folders & Notebooks List */}
       <div className="flex-1 overflow-y-auto p-1 space-y-1">
         {/* Workspace Root Header */}
-        <div className="px-2 py-1 font-semibold text-gray-400 uppercase text-[10px] tracking-wider">
-          {workspace.name}
+        <div className="px-2 py-1 font-semibold text-gray-400 uppercase text-[10px] tracking-wider flex items-center justify-between">
+          <span className="truncate">{workspace.name}</span>
+          {localFsState.dirHandle && (
+            <button
+              onClick={onDisconnectLocalDirectory}
+              className="text-[9px] text-gray-400 hover:text-red-400 lowercase normal-case underline"
+              title="Unlink local folder"
+            >
+              unlink
+            </button>
+          )}
         </div>
 
         {/* Folders */}
@@ -310,16 +430,32 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
                   )}
                   <span className="font-medium truncate">{folder.title}</span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAddNotebook(folder.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-sky-400 text-gray-400"
-                  title="Add Notebook to Folder"
-                >
-                  <Plus size={13} />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNewFile(folder.id);
+                    }}
+                    className="p-0.5 hover:text-sky-400 text-gray-400"
+                    title="Add File/Notebook to Folder"
+                  >
+                    <Plus size={13} />
+                  </button>
+                  <button
+                    onClick={(e) => handleRenameFolder(e, folder.id, folder.title)}
+                    className="p-0.5 hover:text-amber-400 text-gray-400"
+                    title="Rename Folder"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteFolder(e, folder.id)}
+                    className="p-0.5 hover:text-rose-400 text-gray-400"
+                    title="Delete Folder"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
 
               {/* Notebooks inside Folder */}
@@ -332,7 +468,10 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
                       activePageId={activePageId}
                       onSelectPage={onSelectPage}
                       onAddPage={handleAddPage}
+                      onRenameNotebook={handleRenameNotebook}
                       onDeleteNotebook={handleDeleteNotebook}
+                      onRenamePage={handleRenamePage}
+                      onDeletePage={handleDeletePage}
                       onToggleFavorite={handleToggleFavorite}
                       theme={theme}
                       currentTheme={currentTheme}
@@ -361,7 +500,10 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
               activePageId={activePageId}
               onSelectPage={onSelectPage}
               onAddPage={handleAddPage}
+              onRenameNotebook={handleRenameNotebook}
               onDeleteNotebook={handleDeleteNotebook}
+              onRenamePage={handleRenamePage}
+              onDeletePage={handleDeletePage}
               onToggleFavorite={handleToggleFavorite}
               theme={theme}
               currentTheme={currentTheme}
@@ -379,7 +521,10 @@ interface NotebookTreeItemProps {
   activePageId?: string;
   onSelectPage: (notebookId: string, pageId: string) => void;
   onAddPage: (notebookId: string) => void;
+  onRenameNotebook: (e: React.MouseEvent, id: string, title: string) => void;
   onDeleteNotebook: (e: React.MouseEvent, id: string) => void;
+  onRenamePage: (e: React.MouseEvent, notebookId: string, pageId: string, title: string) => void;
+  onDeletePage: (e: React.MouseEvent, notebookId: string, pageId: string) => void;
   onToggleFavorite: (e: React.MouseEvent, id: string) => void;
   theme: any;
   currentTheme: ThemeId;
@@ -392,7 +537,10 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
   activePageId,
   onSelectPage,
   onAddPage,
+  onRenameNotebook,
   onDeleteNotebook,
+  onRenamePage,
+  onDeletePage,
   onToggleFavorite,
   theme,
   currentTheme,
@@ -454,6 +602,13 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
             <FilePlus size={12} />
           </button>
           <button
+            onClick={(e) => onRenameNotebook(e, notebook.id, notebook.title)}
+            className="p-0.5 text-gray-400 hover:text-amber-400"
+            title="Rename Notebook"
+          >
+            <Edit2 size={12} />
+          </button>
+          <button
             onClick={(e) => onDeleteNotebook(e, notebook.id)}
             className="p-0.5 text-gray-400 hover:text-rose-400"
             title="Delete Notebook"
@@ -492,16 +647,32 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
                   <FileText size={13} className={isActive ? 'text-sky-400' : 'text-gray-500'} />
                   <span className="truncate">{page.title}</span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    downloadPageAsPdf(page, notebook.title, currentTheme);
-                  }}
-                  className="opacity-0 group-hover/page:opacity-100 p-0.5 text-gray-400 hover:text-emerald-400"
-                  title="Download Page PDF"
-                >
-                  <Download size={12} />
-                </button>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover/page:opacity-100">
+                  <button
+                    onClick={(e) => onRenamePage(e, notebook.id, page.id, page.title)}
+                    className="p-0.5 text-gray-400 hover:text-amber-400"
+                    title="Rename Page"
+                  >
+                    <Edit2 size={11} />
+                  </button>
+                  <button
+                    onClick={(e) => onDeletePage(e, notebook.id, page.id)}
+                    className="p-0.5 text-gray-400 hover:text-rose-400"
+                    title="Delete Page"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      downloadPageAsPdf(page, notebook.title, currentTheme);
+                    }}
+                    className="p-0.5 text-gray-400 hover:text-emerald-400"
+                    title="Download Page PDF"
+                  >
+                    <Download size={11} />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -510,3 +681,4 @@ const NotebookTreeItem: React.FC<NotebookTreeItemProps> = ({
     </div>
   );
 };
+

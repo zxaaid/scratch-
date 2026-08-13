@@ -39,11 +39,50 @@ import { CommandPalette } from './components/CommandPalette';
 import { AiDiffModal } from './components/AiDiffModal';
 import { THEMES } from './lib/themes';
 import { convertToElegantScript } from './lib/handwritingEngine';
+import {
+  LocalFileSystemState,
+  pickLocalDirectory,
+  getStoredDirectoryHandle,
+  clearStoredDirectoryHandle,
+  verifyDirectoryPermission,
+  createLocalSubfolder,
+  createLocalFile,
+  saveWorkspaceToLocalFolder,
+} from './lib/fileSystemAccess';
 
 export default function App() {
   // Primary Workspace State
   const [workspace, setWorkspace] = useState<Workspace>(INITIAL_WORKSPACE);
   const [currentTheme, setTheme] = useState<ThemeId>('vscode-dark');
+
+  // Local File System Access State (Direct PC/Tablet Folder Storage)
+  const [localFsState, setLocalFsState] = useState<LocalFileSystemState>({
+    dirHandle: null,
+    folderName: null,
+    autoSaveEnabled: true,
+    lastSavedAt: null,
+    isSaving: false,
+    error: null,
+  });
+
+  // Restore linked local folder handle on app mount
+  useEffect(() => {
+    async function restoreLocalFolder() {
+      try {
+        const storedHandle = await getStoredDirectoryHandle();
+        if (storedHandle) {
+          setLocalFsState((prev) => ({
+            ...prev,
+            dirHandle: storedHandle,
+            folderName: storedHandle.name,
+          }));
+        }
+      } catch (e) {
+        console.warn('Error restoring local directory handle:', e);
+      }
+    }
+    restoreLocalFolder();
+  }, []);
 
   // Sidebar & Navigation
   const [activeActivityTab, setActiveActivityTab] = useState<ActivityTab>('explorer');
@@ -145,6 +184,138 @@ export default function App() {
   // Tablet Monitoring State
   const [tabletPressure, setTabletPressure] = useState<number>(0.5);
   const [tabletConnected, setTabletConnected] = useState<boolean>(true);
+
+  // Local Device Storage (Direct Access) Handlers
+  const handleConnectLocalDirectory = async () => {
+    try {
+      const res = await pickLocalDirectory();
+      if (res) {
+        setLocalFsState({
+          dirHandle: res.handle,
+          folderName: res.name,
+          autoSaveEnabled: true,
+          lastSavedAt: new Date().toLocaleTimeString(),
+          isSaving: true,
+          error: null,
+        });
+        await saveWorkspaceToLocalFolder(res.handle, workspace);
+        setLocalFsState((prev) => ({
+          ...prev,
+          isSaving: false,
+          lastSavedAt: new Date().toLocaleTimeString(),
+        }));
+      }
+    } catch (err) {
+      alert(`Could not link local folder: ${(err as Error).message}`);
+      setLocalFsState((prev) => ({ ...prev, isSaving: false, error: (err as Error).message }));
+    }
+  };
+
+  const handleDisconnectLocalDirectory = async () => {
+    await clearStoredDirectoryHandle();
+    setLocalFsState({
+      dirHandle: null,
+      folderName: null,
+      autoSaveEnabled: false,
+      lastSavedAt: null,
+      isSaving: false,
+      error: null,
+    });
+  };
+
+  const handleToggleAutoSave = () => {
+    setLocalFsState((prev) => ({
+      ...prev,
+      autoSaveEnabled: !prev.autoSaveEnabled,
+    }));
+  };
+
+  const handleCreateLocalSubfolder = async () => {
+    if (!localFsState.dirHandle) {
+      await handleConnectLocalDirectory();
+      return;
+    }
+    const folderName = prompt('Enter subfolder name to create directly on your PC/Tablet:', 'Subject Notes');
+    if (!folderName) return;
+    try {
+      const hasPerm = await verifyDirectoryPermission(localFsState.dirHandle, true);
+      if (!hasPerm) {
+        alert('Permission to write to local folder was denied.');
+        return;
+      }
+      await createLocalSubfolder(localFsState.dirHandle, folderName);
+      setWorkspace((prev) => ({
+        ...prev,
+        folders: [...prev.folders, { id: `f_${Date.now()}`, title: folderName, isExpanded: true }],
+      }));
+    } catch (err) {
+      alert(`Error creating local folder: ${(err as Error).message}`);
+    }
+  };
+
+  const handleCreateLocalFile = async () => {
+    if (!localFsState.dirHandle) {
+      await handleConnectLocalDirectory();
+      return;
+    }
+    const fileName = prompt('Enter file name to create directly on your PC/Tablet (e.g. MyNotes.json):', 'Note.json');
+    if (!fileName) return;
+    try {
+      const hasPerm = await verifyDirectoryPermission(localFsState.dirHandle, true);
+      if (!hasPerm) {
+        alert('Permission to write to local folder was denied.');
+        return;
+      }
+      await createLocalFile(localFsState.dirHandle, fileName, JSON.stringify(workspace, null, 2));
+      alert(`File "${fileName}" saved directly to your device storage!`);
+    } catch (err) {
+      alert(`Error creating local file: ${(err as Error).message}`);
+    }
+  };
+
+  const handleSyncLocalDirectory = async () => {
+    if (!localFsState.dirHandle) return;
+    try {
+      setLocalFsState((prev) => ({ ...prev, isSaving: true }));
+      const hasPerm = await verifyDirectoryPermission(localFsState.dirHandle, true);
+      if (hasPerm) {
+        await saveWorkspaceToLocalFolder(localFsState.dirHandle, workspace);
+        setLocalFsState((prev) => ({
+          ...prev,
+          isSaving: false,
+          lastSavedAt: new Date().toLocaleTimeString(),
+          error: null,
+        }));
+      } else {
+        setLocalFsState((prev) => ({ ...prev, isSaving: false, error: 'Permission required' }));
+      }
+    } catch (err) {
+      setLocalFsState((prev) => ({ ...prev, isSaving: false, error: (err as Error).message }));
+    }
+  };
+
+  // Real-time Debounced Auto-Save to Local PC/Tablet Folder
+  useEffect(() => {
+    if (!localFsState.dirHandle || !localFsState.autoSaveEnabled) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setLocalFsState((prev) => ({ ...prev, isSaving: true }));
+        await saveWorkspaceToLocalFolder(localFsState.dirHandle!, workspace);
+        setLocalFsState((prev) => ({
+          ...prev,
+          isSaving: false,
+          lastSavedAt: new Date().toLocaleTimeString(),
+          error: null,
+        }));
+      } catch (err) {
+        console.warn('Auto-save to local folder error:', err);
+        setLocalFsState((prev) => ({ ...prev, isSaving: false, error: 'Auto-save failed' }));
+      }
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [workspace, localFsState.dirHandle, localFsState.autoSaveEnabled]);
 
   // Command Palette State
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
@@ -532,6 +703,11 @@ export default function App() {
 
   // Command Palette Actions Definitions
   const commandPaletteActions: CommandPaletteAction[] = [
+    { id: 'act_link_fs', title: 'Link Local PC/Tablet Folder (Direct Disk Save)', category: 'Local Storage', shortcut: 'Ctrl+Shift+L', run: handleConnectLocalDirectory },
+    { id: 'act_create_subfolder', title: 'Create Folder directly on Local Device', category: 'Local Storage', run: handleCreateLocalSubfolder },
+    { id: 'act_create_subfile', title: 'Create File directly on Local Device', category: 'Local Storage', run: handleCreateLocalFile },
+    { id: 'act_sync_fs', title: 'Sync & Save Now to Local Folder', category: 'Local Storage', shortcut: 'Ctrl+S', run: handleSyncLocalDirectory },
+    { id: 'act_unlink_fs', title: 'Unlink Local Folder', category: 'Local Storage', run: handleDisconnectLocalDirectory },
     { id: 'act_new_page', title: 'New Blank Notebook Page', category: 'Notebook', shortcut: 'Ctrl+N', run: handleNewBlankPage },
     { id: 'act_beautify', title: 'Beautify Current Page (AI)', category: 'AI', run: () => handleRunAiAction('beautify') },
     { id: 'act_ocr', title: 'Run OCR to Markdown', category: 'AI', run: () => handleRunAiAction('ocr') },
@@ -551,6 +727,15 @@ export default function App() {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Save to Local Device (Ctrl+S)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (localFsState.dirHandle) {
+          handleSyncLocalDirectory();
+        } else {
+          handleConnectLocalDirectory();
+        }
+      }
       // Command Palette (Ctrl+Shift+P)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
@@ -622,6 +807,13 @@ export default function App() {
                 currentTheme={currentTheme}
                 isShrunk={sidebarWidth < 180}
                 onToggleShrink={handleToggleSidebarShrink}
+                localFsState={localFsState}
+                onConnectLocalDirectory={handleConnectLocalDirectory}
+                onDisconnectLocalDirectory={handleDisconnectLocalDirectory}
+                onToggleAutoSave={handleToggleAutoSave}
+                onCreateLocalSubfolder={handleCreateLocalSubfolder}
+                onCreateLocalFile={handleCreateLocalFile}
+                onSyncLocalDirectory={handleSyncLocalDirectory}
               />
             )}
             {activeActivityTab === 'practice' && (
@@ -769,6 +961,8 @@ export default function App() {
         tabletPressure={tabletPressure}
         currentTheme={currentTheme}
         tabletConnected={tabletConnected}
+        localFolderName={localFsState.folderName}
+        onConnectLocalDirectory={handleConnectLocalDirectory}
       />
 
       {/* VS Code Command Palette (Ctrl+Shift+P) */}
