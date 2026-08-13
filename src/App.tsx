@@ -47,12 +47,40 @@ import {
   createLocalSubfolder,
   createLocalFile,
   saveWorkspaceToLocalFolder,
+  loadWorkspaceFromLocalFolder,
 } from './lib/fileSystemAccess';
 
+const LS_WORKSPACE_KEY = 'notebook_app_workspace_v2';
+const LS_TABS_KEY = 'notebook_app_tabs_v2';
+const LS_ACTIVE_TAB_KEY = 'notebook_app_active_tab_v2';
+const LS_THEME_KEY = 'notebook_app_theme_v2';
+
 export default function App() {
-  // Primary Workspace State
-  const [workspace, setWorkspace] = useState<Workspace>(INITIAL_WORKSPACE);
-  const [currentTheme, setTheme] = useState<ThemeId>('vscode-dark');
+  // Primary Workspace State with LocalStorage auto-restore across sessions
+  const [workspace, setWorkspace] = useState<Workspace>(() => {
+    try {
+      const saved = localStorage.getItem(LS_WORKSPACE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.notebooks)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not restore workspace from localStorage:', e);
+    }
+    return INITIAL_WORKSPACE;
+  });
+
+  const [currentTheme, setTheme] = useState<ThemeId>(() => {
+    try {
+      const saved = localStorage.getItem(LS_THEME_KEY);
+      if (saved && THEMES[saved as ThemeId]) {
+        return saved as ThemeId;
+      }
+    } catch (e) {}
+    return 'vscode-dark';
+  });
 
   // Local File System Access State (Direct PC/Tablet Folder Storage)
   const [localFsState, setLocalFsState] = useState<LocalFileSystemState>({
@@ -75,6 +103,16 @@ export default function App() {
             dirHandle: storedHandle,
             folderName: storedHandle.name,
           }));
+
+          // Try auto-loading workspace directly from disk folder if permission is active
+          try {
+            const diskWk = await loadWorkspaceFromLocalFolder(storedHandle);
+            if (diskWk && (diskWk as any).notebooks) {
+              setWorkspace(diskWk as Workspace);
+            }
+          } catch (err) {
+            console.warn('Disk workspace auto-read deferred:', err);
+          }
         }
       } catch (e) {
         console.warn('Error restoring local directory handle:', e);
@@ -82,6 +120,15 @@ export default function App() {
     }
     restoreLocalFolder();
   }, []);
+
+  // Auto-persist app state to browser localStorage whenever updated
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_WORKSPACE_KEY, JSON.stringify(workspace));
+    } catch (e) {
+      console.warn('Could not save workspace to localStorage:', e);
+    }
+  }, [workspace]);
 
   // Sidebar & Navigation
   const [activeActivityTab, setActiveActivityTab] = useState<ActivityTab>('explorer');
@@ -151,17 +198,51 @@ export default function App() {
     setSidebarWidth((prev) => (prev <= 160 ? 260 : 130));
   }, []);
 
-  // Tabs State
-  const [tabs, setTabs] = useState<TabItem[]>([
-    {
-      id: 'tab_schrodinger',
-      type: 'page',
-      notebookId: 'nb_quantum',
-      pageId: 'pg_schrodinger',
-      title: '1. Schrödinger Equation',
-    },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>('tab_schrodinger');
+  // Tabs State with LocalStorage restore
+  const [tabs, setTabs] = useState<TabItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(LS_TABS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [
+      {
+        id: 'tab_schrodinger',
+        type: 'page',
+        notebookId: 'nb_quantum',
+        pageId: 'pg_schrodinger',
+        title: '1. Schrödinger Equation',
+      },
+    ];
+  });
+
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(LS_ACTIVE_TAB_KEY);
+      if (saved) return saved;
+    } catch (e) {}
+    return 'tab_schrodinger';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_TABS_KEY, JSON.stringify(tabs));
+    } catch (e) {}
+  }, [tabs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_ACTIVE_TAB_KEY, activeTabId);
+    } catch (e) {}
+  }, [activeTabId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_THEME_KEY, currentTheme);
+    } catch (e) {}
+  }, [currentTheme]);
 
   // Pen Tools & Drawing Settings
   const [currentTool, setCurrentTool] = useState<PenToolType>('fountain');
