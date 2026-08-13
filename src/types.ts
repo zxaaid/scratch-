@@ -12,7 +12,15 @@ export type PenToolType =
   | 'text'
   | 'sticky';
 
-export type ShapeType = 'line' | 'arrow' | 'rectangle' | 'circle' | 'polygon';
+export type ShapeType =
+  | 'line'
+  | 'arrow'
+  | 'rectangle'
+  | 'circle'
+  | 'polygon'
+  | 'star'
+  | 'diamond'
+  | 'hexagon';
 
 export type HandwritingMode = 1 | 2 | 3; // 1: Smoothing only, 2: Beautify style, 3: Script conversion
 

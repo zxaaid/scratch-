@@ -125,6 +125,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const strokesRef = useRef<Stroke[]>([]);
   const shapesRef = useRef<ShapeElement[]>([]);
 
+  // Shape Drawing Active Refs
+  const isDrawingShapeRef = useRef<boolean>(false);
+  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const activeShapeRef = useRef<ShapeElement | null>(null);
+
+  // Pressure update throttle ref
+  const lastPressureUpdateRef = useRef<number>(0);
+
   // Selection & Transform State
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
@@ -212,7 +220,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const worldY = (clientY - panY) / zoom;
 
     const pressure = e.pointerType === 'pen' ? e.pressure : 0.5;
-    if (onUpdateTabletPressure) {
+
+    // Throttle pressure updates to App.tsx state to avoid forcing full tree re-renders on every mouse pixel move
+    const now = Date.now();
+    if (onUpdateTabletPressure && now - lastPressureUpdateRef.current > 150) {
+      lastPressureUpdateRef.current = now;
       onUpdateTabletPressure(pressure);
     }
 
@@ -222,7 +234,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       pressure: Math.max(0.05, pressure),
       tiltX: e.tiltX,
       tiltY: e.tiltY,
-      time: Date.now(),
+      time: now,
     };
   };
 
@@ -526,8 +538,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.lineJoin = 'round';
 
     if (isSelected) {
-      ctx.shadowColor = '#38bdf8';
-      ctx.shadowBlur = 10;
+      ctx.setLineDash([4 / zoom, 4 / zoom]);
     }
 
     if (stroke.tool === 'highlighter') {
@@ -555,19 +566,18 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.restore();
   };
 
-  // Render Shape or Text or Sticky
+  // Render Shape or Text or Sticky or Polygon
   const renderShape = (ctx: CanvasRenderingContext2D, shape: ShapeElement) => {
     const isSelected = selectedShapeIds.includes(shape.id);
 
     ctx.save();
     ctx.strokeStyle = shape.color;
-    ctx.fillStyle = shape.fillColor || shape.color;
+    ctx.fillStyle = shape.fillColor || 'transparent';
     ctx.lineWidth = shape.strokeWidth;
     ctx.globalAlpha = shape.opacity;
 
     if (isSelected) {
-      ctx.shadowColor = '#007acc';
-      ctx.shadowBlur = 12;
+      ctx.setLineDash([4 / zoom, 4 / zoom]);
     }
 
     // Apply Rotation Transform if present
@@ -580,12 +590,93 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
 
     if (shape.type === 'rectangle') {
-      ctx.strokeRect(shape.x, shape.y, shape.width || 120, shape.height || 80);
+      const w = shape.width || 120;
+      const h = shape.height || 80;
+      ctx.strokeRect(shape.x, shape.y, w, h);
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fillRect(shape.x, shape.y, w, h);
+      }
     } else if (shape.type === 'circle') {
       ctx.beginPath();
-      const radius = Math.abs(shape.width || 60) / 2;
-      ctx.arc(shape.x + radius, shape.y + radius, radius, 0, Math.PI * 2);
+      const rx = Math.abs(shape.width || 60) / 2;
+      const ry = Math.abs(shape.height || 60) / 2;
+      const cx = shape.x + rx;
+      const cy = shape.y + ry;
+      if (ctx.ellipse) {
+        ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
+      } else {
+        ctx.arc(cx, cy, rx, 0, Math.PI * 2);
+      }
       ctx.stroke();
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fill();
+      }
+    } else if (shape.type === 'polygon') {
+      const w = shape.width || 100;
+      const h = shape.height || 100;
+      ctx.beginPath();
+      ctx.moveTo(shape.x + w / 2, shape.y);
+      ctx.lineTo(shape.x + w, shape.y + h);
+      ctx.lineTo(shape.x, shape.y + h);
+      ctx.closePath();
+      ctx.stroke();
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fill();
+      }
+    } else if (shape.type === 'diamond') {
+      const w = shape.width || 100;
+      const h = shape.height || 100;
+      ctx.beginPath();
+      ctx.moveTo(shape.x + w / 2, shape.y);
+      ctx.lineTo(shape.x + w, shape.y + h / 2);
+      ctx.lineTo(shape.x + w / 2, shape.y + h);
+      ctx.lineTo(shape.x, shape.y + h / 2);
+      ctx.closePath();
+      ctx.stroke();
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fill();
+      }
+    } else if (shape.type === 'hexagon') {
+      const w = shape.width || 100;
+      const h = shape.height || 100;
+      const cx = shape.x + w / 2;
+      const cy = shape.y + h / 2;
+      const rx = w / 2;
+      const ry = h / 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI) / 3;
+        const x = cx + rx * Math.cos(angle);
+        const y = cy + ry * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fill();
+      }
+    } else if (shape.type === 'star') {
+      const w = shape.width || 100;
+      const h = shape.height || 100;
+      const cx = shape.x + w / 2;
+      const cy = shape.y + h / 2;
+      const outerR = Math.min(Math.abs(w), Math.abs(h)) / 2;
+      const innerR = outerR * 0.4;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? outerR : innerR;
+        const angle = (i * Math.PI) / 5 - Math.PI / 2;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      if (shape.fillColor && shape.fillColor !== 'transparent') {
+        ctx.fill();
+      }
     } else if (shape.type === 'arrow' || shape.type === 'line') {
       const endX = shape.x + (shape.width || 120);
       const endY = shape.y + (shape.height || 0);
@@ -597,7 +688,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       if (shape.type === 'arrow') {
         const angle = Math.atan2(endY - shape.y, endX - shape.x);
-        const headLen = 12;
+        const headLen = Math.max(10, shape.strokeWidth * 3);
+        ctx.fillStyle = shape.color;
         ctx.beginPath();
         ctx.moveTo(endX, endY);
         ctx.lineTo(
@@ -616,8 +708,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const height = shape.height || 130;
 
       ctx.fillStyle = '#fef08a';
-      ctx.shadowColor = 'rgba(0,0,0,0.25)';
-      ctx.shadowBlur = 8;
       ctx.fillRect(shape.x, shape.y, width, height);
 
       ctx.fillStyle = '#fde047';
@@ -625,7 +715,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       ctx.fillStyle = '#1e293b';
       ctx.font = '13px sans-serif';
-      ctx.shadowBlur = 0;
       const text = shape.text || 'Sticky Note';
       ctx.fillText(text, shape.x + 10, shape.y + 40, width - 20);
 
@@ -676,11 +765,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const paperX = Math.max(24 / zoom, (width / zoom - pageWidth) / 2);
     const paperY = Math.max(24 / zoom, (height / zoom - pageHeight) / 2);
 
-    // LAYER 1: A4 Paper Card with Drop Shadow
+    // LAYER 1: A4 Paper Card (Fast 2-pass shadow for 120fps performance)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    ctx.shadowBlur = 18 / zoom;
-    ctx.shadowOffsetY = 6 / zoom;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+    ctx.fillRect(paperX + 4 / zoom, paperY + 4 / zoom, pageWidth, pageHeight);
     ctx.fillStyle = theme.canvasPaper.blank;
     ctx.fillRect(paperX, paperY, pageWidth, pageHeight);
     ctx.restore();
@@ -696,42 +784,54 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     // LAYER 2: Practice Template Guide Background Overlay
     renderTemplateOverlay(ctx, paperX, paperY);
 
-    // LAYER 3: Render Shapes, Text Boxes & Sticky Cards
+    // LAYER 3: Render Saved Shapes, Text Boxes & Sticky Cards
     shapesRef.current.forEach((s) => renderShape(ctx, s));
+
+    // LAYER 3.5: Render Active Shape Rubberband Preview
+    if (activeShapeRef.current) {
+      renderShape(ctx, activeShapeRef.current);
+    }
 
     // LAYER 3: Render Saved Strokes
     strokesRef.current.forEach((st) => renderStroke(ctx, st));
 
-    // LAYER 3: Render Active Pointer Stroke
+    // LAYER 3: Render Active Pointer Stroke (Zero Latency Live Pass)
     const activePts = activePointsRef.current;
-    if (isDrawingRef.current && activePts.length > 1) {
-      const activeStroke: Stroke = {
-        id: 'active',
-        tool,
-        color,
-        width: strokeWidth,
-        opacity,
-        points: activePts,
-        smoothedPoints: catmullRomSmooth(
-          filterJitter(activePts, tabletSettings.smoothingStrength),
-          3
-        ),
-      };
+    if (isDrawingRef.current && activePts.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = opacity;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-      renderStroke(ctx, activeStroke);
-
-      const predicted = predictStrokePoints(activePts, tabletSettings.predictionLatencyMs);
-      if (predicted.length > 0) {
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = opacity * 0.4;
-        ctx.lineWidth = strokeWidth * 0.8;
-        ctx.beginPath();
-        ctx.moveTo(activePts[activePts.length - 1].x, activePts[activePts.length - 1].y);
-        ctx.lineTo(predicted[0].x, predicted[0].y);
-        ctx.stroke();
-        ctx.restore();
+      if (tool === 'highlighter') {
+        ctx.globalCompositeOperation = 'multiply';
       }
+
+      if (activePts.length === 1) {
+        ctx.beginPath();
+        ctx.arc(activePts[0].x, activePts[0].y, strokeWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        for (let i = 1; i < activePts.length; i++) {
+          const p1 = activePts[i - 1];
+          const p2 = activePts[i];
+          const segWidth = calculateWidth(
+            strokeWidth,
+            tool,
+            p1,
+            p2,
+            tabletSettings.pressureSensitivity
+          );
+          ctx.beginPath();
+          ctx.lineWidth = segWidth;
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     // Active Lasso Trail
@@ -830,16 +930,23 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     theme,
   ]);
 
-  // Animation Loop
+  // Stable RAF Loop to maintain uninterrupted 120 FPS
+  const drawCanvasRef = useRef(drawCanvas);
+  useEffect(() => {
+    drawCanvasRef.current = drawCanvas;
+  }, [drawCanvas]);
+
   useEffect(() => {
     let animationFrameId: number;
     const render = () => {
-      drawCanvas();
+      if (drawCanvasRef.current) {
+        drawCanvasRef.current();
+      }
       animationFrameId = requestAnimationFrame(render);
     };
     render();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [drawCanvas]);
+  }, []);
 
   // Container Resize Observer for auto-adjusting working area & page size
   useEffect(() => {
@@ -994,6 +1101,26 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       return;
     }
 
+    // 6.5. GEOMETRIC SHAPE TOOL (Drag-to-draw interactive creation)
+    if (tool === 'shape') {
+      isDrawingShapeRef.current = true;
+      shapeStartRef.current = { x: point.x, y: point.y };
+      activeShapeRef.current = {
+        id: `sh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        type: selectedShape,
+        x: point.x,
+        y: point.y,
+        width: 1,
+        height: 1,
+        color,
+        strokeWidth,
+        opacity,
+      };
+      setSelectedStrokeIds([]);
+      setSelectedShapeIds([]);
+      return;
+    }
+
     // 7. PEN / BRUSH / FOUNTAIN / PENCIL DRAWING (No accidental dragging!)
     isDrawingRef.current = true;
     activePointsRef.current = [point];
@@ -1027,6 +1154,33 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const dy = point.y - lastPointerRef.current.y;
       lastPointerRef.current = { x: point.x, y: point.y };
       translateSelectedItems(dx, dy);
+      return;
+    }
+
+    // Handle Active Shape Drag Creation (Rubberband preview)
+    if (isDrawingShapeRef.current && shapeStartRef.current && activeShapeRef.current) {
+      const startX = shapeStartRef.current.x;
+      const startY = shapeStartRef.current.y;
+      const rawW = point.x - startX;
+      const rawH = point.y - startY;
+
+      if (selectedShape === 'line' || selectedShape === 'arrow') {
+        activeShapeRef.current = {
+          ...activeShapeRef.current,
+          x: startX,
+          y: startY,
+          width: rawW,
+          height: rawH,
+        };
+      } else {
+        activeShapeRef.current = {
+          ...activeShapeRef.current,
+          x: Math.min(startX, point.x),
+          y: Math.min(startY, point.y),
+          width: Math.abs(rawW),
+          height: Math.abs(rawH),
+        };
+      }
       return;
     }
 
@@ -1069,6 +1223,22 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (isTranslatingRef.current) {
       isTranslatingRef.current = false;
       saveCanvasData(strokesRef.current, shapesRef.current);
+      return;
+    }
+
+    // Complete Shape Drawing Creation
+    if (isDrawingShapeRef.current && activeShapeRef.current) {
+      isDrawingShapeRef.current = false;
+      const finishedShape = activeShapeRef.current;
+      activeShapeRef.current = null;
+      shapeStartRef.current = null;
+
+      if (Math.abs(finishedShape.width || 0) > 3 || Math.abs(finishedShape.height || 0) > 3) {
+        const updatedShapes = [...shapesRef.current, finishedShape];
+        setShapes(updatedShapes);
+        shapesRef.current = updatedShapes;
+        saveCanvasData(strokesRef.current, updatedShapes);
+      }
       return;
     }
 
