@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MousePointer,
+  Hand,
   Pen,
   PenTool,
   Pencil,
@@ -118,6 +119,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
 
   const mainTools: { id: PenToolType; label: string; icon: React.ReactNode }[] = [
     { id: 'cursor', label: 'Cursor (Select, Move, Rotate, Crop & Scale)', icon: <MousePointer size={16} /> },
+    { id: 'hand', label: 'Hand Tool (Grab & Drag Canvas or Elements - Shortcut: H / Space)', icon: <Hand size={16} /> },
     { id: 'fountain', label: 'Fountain Pen (Calligraphy)', icon: <PenTool size={16} /> },
     { id: 'pen', label: 'Fine Pen', icon: <Pen size={16} /> },
     { id: 'pencil', label: 'Pencil (Texture)', icon: <Pencil size={16} /> },

@@ -1,5 +1,6 @@
 export type PenToolType =
   | 'cursor'
+  | 'hand'
   | 'pen'
   | 'fountain'
   | 'pencil'

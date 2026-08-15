@@ -178,6 +178,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastAngleRadRef = useRef<number>(0);
 
+  // Spacebar Hand Panning State
+  const [isSpacebarDown, setIsSpacebarDown] = useState<boolean>(false);
+
   // Box Selection Drag Ref (for cursor box drag)
   const isBoxSelectingRef = useRef<boolean>(false);
   const boxSelectStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -820,6 +823,31 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     handleDataTransferDrop(e.dataTransfer, dropWorldX, dropWorldY);
   };
+
+  // Spacebar Hand Panning Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editingTextElement) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      if (e.code === 'Space' && !e.repeat) {
+        setIsSpacebarDown(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacebarDown(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [editingTextElement]);
 
   // Keyboard Event Listener for Arrow Keys, Rotation, and Delete
   useEffect(() => {
@@ -1524,7 +1552,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Pointer Down Handler
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    if (isSpacebarDown || e.button === 1 || (e.button === 0 && e.altKey)) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
       return;
@@ -1582,9 +1610,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         }
       }
 
-      // Check Image Body Grab (for cursor tool)
+      // Check Image Body Grab (for cursor tool, hand tool, or cropping)
       if (
-        (tool === 'cursor' || isCropping) &&
+        (tool === 'cursor' || tool === 'hand' || isCropping) &&
         localX >= -w / 2 &&
         localX <= w / 2 &&
         localY >= -h / 2 &&
@@ -1608,7 +1636,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
 
       if (
-        tool === 'cursor' &&
+        (tool === 'cursor' || tool === 'hand') &&
         point.x >= bounds.minX &&
         point.x <= bounds.maxX &&
         point.y >= bounds.minY &&
@@ -1620,8 +1648,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
     }
 
-    // 3. CURSOR TOOL BEHAVIOR: Select & Grab Elements directly
-    if (tool === 'cursor') {
+    // 3. CURSOR & HAND TOOL BEHAVIOR: Select & Grab Elements directly
+    if (tool === 'cursor' || tool === 'hand') {
       // Check if clicked an Image
       const clickedImage = imagesRef.current.slice().reverse().find((img) => {
         const cx = img.x + img.width / 2;
@@ -1665,7 +1693,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       // Check if clicking directly on a stroke
       const clickedStroke = strokesRef.current.slice().reverse().find((st) =>
-        st.points.some((p) => Math.hypot(p.x - point.x, p.y - point.y) < st.width * 2.5 + 6)
+        st.points.some((p) => Math.hypot(p.x - point.x, p.y - point.y) < st.width * 2.5 + 8)
       );
 
       if (clickedStroke) {
@@ -1677,7 +1705,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return;
       }
 
-      // If clicked empty space: start drag-box selection
+      // If clicked empty space with Hand tool -> grab & pan the entire canvas!
+      if (tool === 'hand') {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
+        return;
+      }
+
+      // If clicked empty space with Cursor tool -> start drag-box selection
       isBoxSelectingRef.current = true;
       boxSelectStartRef.current = { x: point.x, y: point.y };
       setBoxSelectRect({ x: point.x, y: point.y, w: 0, h: 0 });
@@ -2159,6 +2194,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Custom Cursor Style
   const dotCursorStyle = useMemo(() => {
+    if (isSpacebarDown || tool === 'hand') {
+      return isPanning || isTranslatingRef.current ? 'grabbing' : 'grab';
+    }
     if (tool === 'cursor') return 'default';
     if (tool === 'eraser') {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="rgba(244,63,94,0.25)" stroke="%23f43f5e" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5" fill="%23f43f5e"/></svg>`;
@@ -2172,7 +2210,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${dotRadius}" fill="${strokeHex}" stroke="%23ffffff" stroke-width="1.5"/><circle cx="${center}" cy="${center}" r="${Math.max(1, dotRadius - 2.5)}" fill="%23ffffff" opacity="0.85"/></svg>`;
     return `url('data:image/svg+xml;utf8,${svg}') ${center} ${center}, crosshair`;
-  }, [tool, color, strokeWidth]);
+  }, [tool, color, strokeWidth, isSpacebarDown, isPanning]);
 
   return (
     <div

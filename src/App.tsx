@@ -938,6 +938,13 @@ export default function App() {
         input.click();
       },
     },
+    { id: 'act_tool_hand', title: 'Tool: Hand Grab & Drag (H / Space)', category: 'Tools', shortcut: 'H', run: () => setCurrentTool('hand') },
+    { id: 'act_tool_cursor', title: 'Tool: Cursor Select & Transform (V)', category: 'Tools', shortcut: 'V', run: () => setCurrentTool('cursor') },
+    { id: 'act_tool_pen', title: 'Tool: Fine Pen (P)', category: 'Tools', shortcut: 'P', run: () => setCurrentTool('pen') },
+    { id: 'act_tool_fountain', title: 'Tool: Fountain Pen (Calligraphy)', category: 'Tools', run: () => setCurrentTool('fountain') },
+    { id: 'act_tool_eraser', title: 'Tool: Eraser (E)', category: 'Tools', shortcut: 'E', run: () => setCurrentTool('eraser') },
+    { id: 'act_tool_lasso', title: 'Tool: Lasso Selection (L)', category: 'Tools', shortcut: 'L', run: () => setCurrentTool('lasso') },
+    { id: 'act_tool_highlighter', title: 'Tool: Highlighter', category: 'Tools', run: () => setCurrentTool('highlighter') },
     { id: 'act_beautify', title: 'Beautify Current Page (AI)', category: 'AI', run: () => handleRunAiAction('beautify') },
     { id: 'act_ocr', title: 'Run OCR to Markdown', category: 'AI', run: () => handleRunAiAction('ocr') },
     { id: 'act_summarize', title: 'Summarize Note', category: 'AI', run: () => handleRunAiAction('summarize') },
@@ -1011,6 +1018,26 @@ export default function App() {
       ) {
         e.preventDefault();
         handleRedo();
+        return;
+      }
+
+      // Single Key Tool Selection (when not typing in an input/textarea)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !isCommandPaletteOpen && !aiModalOpen) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target as HTMLElement)?.isContentEditable) {
+          const key = e.key.toLowerCase();
+          if (key === 'h') {
+            setCurrentTool('hand');
+          } else if (key === 'v') {
+            setCurrentTool('cursor');
+          } else if (key === 'p') {
+            setCurrentTool('pen');
+          } else if (key === 'e') {
+            setCurrentTool('eraser');
+          } else if (key === 'l') {
+            setCurrentTool('lasso');
+          }
+        }
       }
     };
 
