@@ -258,9 +258,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
   }, [page?.id, page?.updatedAt, pdf?.id, pdfPageNum]);
 
-  // Auto-deselect all elements when switching away from Cursor selection tool
+  // Auto-deselect all elements when switching away from selection tools (Cursor or Hand)
   useEffect(() => {
-    if (tool !== 'cursor') {
+    if (tool !== 'cursor' && tool !== 'hand') {
       setSelectedImageId(null);
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
@@ -1018,7 +1018,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const imgObj = loadedImagesMapRef.current.get(imgElement.id);
     if (!imgObj || !imgObj.complete) return;
 
-    const isSelected = selectedImageId === imgElement.id && tool === 'cursor';
+    const isSelected = selectedImageId === imgElement.id && (tool === 'cursor' || tool === 'hand');
     const w = imgElement.width;
     const h = imgElement.height;
 
@@ -1395,7 +1395,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
 
     // Selection Bounds for strokes/shapes
-    const bounds = tool === 'cursor' ? getSelectionBounds() : null;
+    const bounds = (tool === 'cursor' || tool === 'hand') ? getSelectionBounds() : null;
     if (bounds) {
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
@@ -1568,8 +1568,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
 
-    // Hand tool, spacebar down, middle click, or Alt+click -> Pan canvas smoothly without selecting objects
-    if (isSpacebarDown || e.button === 1 || (e.button === 0 && e.altKey) || tool === 'hand') {
+    // Spacebar down, middle click, or Alt+click -> Pan canvas
+    if (isSpacebarDown || e.button === 1 || (e.button === 0 && e.altKey)) {
       setIsPanning(true);
       setIsDraggingActive(true);
       setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
@@ -1579,9 +1579,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (e.button !== 0 && e.pointerType !== 'pen') return;
 
     const point = getCanvasCoords(e);
+    const isSelectTool = tool === 'cursor' || tool === 'hand';
 
-    // 1. CURSOR TOOL ONLY: CHECK SELECTED IMAGE RESIZE/ROTATE HANDLES OR BODY
-    if (tool === 'cursor' && selectedImage) {
+    // 1. SELECT TOOLS (CURSOR & HAND): CHECK SELECTED IMAGE RESIZE/ROTATE HANDLES OR BODY
+    if (isSelectTool && selectedImage) {
       const img = selectedImage;
       const w = img.width;
       const h = img.height;
@@ -1644,8 +1645,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
     }
 
-    // 2. CURSOR TOOL ONLY: CHECK SELECTION ROTATION KNOB OR BOUNDING BOX (FOR STROKES/SHAPES)
-    if (tool === 'cursor') {
+    // 2. SELECT TOOLS (CURSOR & HAND): CHECK SELECTION ROTATION KNOB OR BOUNDING BOX (FOR STROKES/SHAPES)
+    if (isSelectTool) {
       const bounds = getSelectionBounds();
       if (bounds) {
         const knobY = bounds.minY - 26 / zoom;
@@ -1671,8 +1672,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       }
     }
 
-    // 3. CURSOR TOOL BEHAVIOR: Select & Grab Elements directly
-    if (tool === 'cursor') {
+    // 3. SELECT TOOLS (CURSOR & HAND): Select & Grab Elements directly
+    if (isSelectTool) {
       // Check if clicked an Image
       const clickedImage = imagesRef.current.slice().reverse().find((img) => {
         const cx = img.x + img.width / 2;
@@ -1728,6 +1729,18 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         isTranslatingRef.current = true;
         setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
+        return;
+      }
+
+      // If clicked empty space with Hand tool -> Pan the entire canvas & deselect
+      if (tool === 'hand') {
+        setSelectedImageId(null);
+        setSelectedStrokeIds([]);
+        setSelectedShapeIds([]);
+        setIsCropping(false);
+        setIsPanning(true);
+        setIsDraggingActive(true);
+        setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
         return;
       }
 
@@ -2278,7 +2291,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING IMAGE EDIT TOOLBAR */}
-      {selectedImage && tool === 'cursor' && !isDraggingActive && !isPanning && (
+      {selectedImage && (tool === 'cursor' || tool === 'hand') && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-40"
           style={{
@@ -2304,7 +2317,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING STROKES & SHAPES SELECTION TRANSFORM TOOLBAR */}
-      {currentSelectionBounds && tool === 'cursor' && !selectedImage && !isDraggingActive && !isPanning && (
+      {currentSelectionBounds && (tool === 'cursor' || tool === 'hand') && !selectedImage && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/95 border border-sky-400 text-white shadow-2xl backdrop-blur-md text-xs animate-fade-in"
           style={{
