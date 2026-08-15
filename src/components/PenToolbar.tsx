@@ -23,6 +23,9 @@ import {
   Star,
   Hexagon,
   Gem,
+  ImagePlus,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { PenToolType, ShapeType, HandwritingMode, PenPreset, ThemeId } from '../types';
 import { THEMES } from '../lib/themes';
@@ -49,6 +52,9 @@ interface PenToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   currentTheme: ThemeId;
+  onInsertMedia?: (file: File) => void;
+  isZenMode?: boolean;
+  onToggleZenMode?: () => void;
 }
 
 const QUICK_COLORS = [
@@ -84,6 +90,9 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
   canUndo,
   canRedo,
   currentTheme,
+  onInsertMedia,
+  isZenMode = false,
+  onToggleZenMode,
 }) => {
   const theme = THEMES[currentTheme];
   const [showShapeMenu, setShowShapeMenu] = useState(false);
@@ -91,6 +100,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
 
   const shapeMenuRef = useRef<HTMLDivElement>(null);
   const presetMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -107,7 +117,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
   }, []);
 
   const mainTools: { id: PenToolType; label: string; icon: React.ReactNode }[] = [
-    { id: 'cursor', label: 'Cursor (Select, Move & Rotate)', icon: <MousePointer size={16} /> },
+    { id: 'cursor', label: 'Cursor (Select, Move, Rotate, Crop & Scale)', icon: <MousePointer size={16} /> },
     { id: 'fountain', label: 'Fountain Pen (Calligraphy)', icon: <PenTool size={16} /> },
     { id: 'pen', label: 'Fine Pen', icon: <Pen size={16} /> },
     { id: 'pencil', label: 'Pencil (Texture)', icon: <Pencil size={16} /> },
@@ -119,6 +129,15 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
     { id: 'sticky', label: 'Sticky Note', icon: <StickyNote size={16} /> },
   ];
 
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0 && onInsertMedia) {
+      onInsertMedia(files[0]);
+    }
+    // reset input value so user can re-upload same filename
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div
       className="h-12 px-3 flex items-center justify-between border-b select-none z-30 text-xs shrink-0 relative overflow-visible"
@@ -128,6 +147,15 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
         color: theme.editorFg,
       }}
     >
+      {/* Hidden File Input for Image/PDF Upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInputChange}
+        accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml,image/gif,image/bmp,application/pdf,.pdf"
+        className="hidden"
+      />
+
       {/* Left: Tools Group */}
       <div className="flex items-center gap-1">
         {mainTools.map((t) => {
@@ -150,6 +178,16 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
             </button>
           );
         })}
+
+        {/* Add Image / PDF Button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="p-1.5 rounded flex items-center gap-1 hover:bg-white/10 text-sky-400 hover:text-sky-300 transition-all cursor-pointer font-medium"
+          title="Add Image (PNG, JPG, SVG, WebP) or PDF to Canvas"
+        >
+          <ImagePlus size={16} />
+          <span className="hidden md:inline text-[11px]">Add Image/PDF</span>
+        </button>
 
         {/* Shapes Menu */}
         <div className="relative" ref={shapeMenuRef}>
@@ -402,8 +440,26 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
         >
           <Trash2 size={16} />
         </button>
+
+        {/* Maximize Working Area / Zen Mode Toggle */}
+        {onToggleZenMode && (
+          <button
+            onClick={onToggleZenMode}
+            className={`p-1.5 rounded transition-all cursor-pointer border ${
+              isZenMode
+                ? 'bg-sky-500/30 text-sky-200 border-sky-400'
+                : 'hover:bg-white/10 text-gray-300 hover:text-sky-300 border-transparent'
+            }`}
+            title={
+              isZenMode
+                ? 'Exit Zen Mode (Collapse working area back to standard)'
+                : 'Maximize Working Area (Zen Mode: Hides sidebar & maximizes workspace - Shortcut: F11 / Z)'
+            }
+          >
+            {isZenMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
       </div>
     </div>
   );
 };
-

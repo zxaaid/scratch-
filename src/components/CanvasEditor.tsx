@@ -3,6 +3,8 @@ import {
   Point,
   Stroke,
   ShapeElement,
+  ImageElement,
+  ImageCrop,
   Page,
   PDFItem,
   PenToolType,
@@ -21,16 +23,16 @@ import {
   calculateWidth,
   beautifyPreservingStyle,
   convertToElegantScript,
-  predictStrokePoints,
   analyzeHandwritingQuality,
 } from '../lib/handwritingEngine';
+import { loadPdfDocument, renderPdfPageToCanvas } from '../lib/pdfUtils';
 import { THEMES } from '../lib/themes';
 import { PAGE_ASPECT_PRESETS } from '../lib/pageDimensions';
+import { ImageEditToolbar } from './ImageEditToolbar';
 import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  Move,
   RotateCw,
   Type,
   StickyNote,
@@ -39,23 +41,32 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  RectangleHorizontal,
   FileText,
+  Image as ImageIcon,
+  Upload,
+  Maximize2,
+  Minimize2,
+  Expand,
+  Infinity,
+  Sparkles,
 } from 'lucide-react';
 
 interface CanvasEditorProps {
   page?: Page;
   pdf?: PDFItem;
   pdfPageNum?: number;
-  onUpdatePageStrokes?: (pageId: string, strokes: Stroke[], shapes: ShapeElement[]) => void;
+  onUpdatePageStrokes?: (
+    pageId: string,
+    strokes: Stroke[],
+    shapes: ShapeElement[],
+    images?: ImageElement[]
+  ) => void;
   onUpdatePdfAnnotations?: (
     pdfId: string,
     pageNum: number,
     strokes: Stroke[],
-    shapes: ShapeElement[]
+    shapes: ShapeElement[],
+    images?: ImageElement[]
   ) => void;
   tool: PenToolType;
   selectedShape: ShapeType;
@@ -76,6 +87,8 @@ interface CanvasEditorProps {
   onAddPage?: () => void;
   pageAspectRatio?: PageAspectRatio;
   onSetPageAspectRatio?: (ratio: PageAspectRatio) => void;
+  isZenMode?: boolean;
+  onToggleZenMode?: () => void;
 }
 
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({
@@ -97,12 +110,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   onFeedbackUpdate,
   onUpdateTabletPressure,
   onBeautifySelection,
-  notebookPages,
-  currentPageIndex,
-  onSelectPage,
-  onAddPage,
   pageAspectRatio = 'a4-landscape',
   onSetPageAspectRatio,
+  isZenMode = false,
+  onToggleZenMode,
 }) => {
   const theme = THEMES[currentTheme];
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,15 +126,25 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Saved Strokes and Shapes in State
+  // Saved Strokes, Shapes & Images in State
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [shapes, setShapes] = useState<ShapeElement[]>([]);
+  const [images, setImages] = useState<ImageElement[]>([]);
 
   // Refs for zero-latency drawing without React re-renders on pointer move
   const isDrawingRef = useRef<boolean>(false);
   const activePointsRef = useRef<Point[]>([]);
   const strokesRef = useRef<Stroke[]>([]);
   const shapesRef = useRef<ShapeElement[]>([]);
+  const imagesRef = useRef<ImageElement[]>([]);
+
+  // Loaded HTMLImageElement cache map for smooth 60fps canvas rendering
+  const loadedImagesMapRef = useRef<Map<string, HTMLImageElement>>(new Map());
+
+  // PDF Page Canvas Cache for PDF Mode
+  const pdfCanvasCacheRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfDocRef = useRef<any>(null);
+  const [isPdfLoading, setIsPdfLoading] = useState<boolean>(false);
 
   // Shape Drawing Active Refs
   const isDrawingShapeRef = useRef<boolean>(false);
@@ -136,12 +157,24 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   // Selection & Transform State
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+
+  // Drag & Drop hover feedback
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  // Cropping State
+  const [isCropping, setIsCropping] = useState<boolean>(false);
+  const [cropBox, setCropBox] = useState<ImageCrop>({ x: 0, y: 0, width: 1, height: 1 });
+
+  // Lasso State
   const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
   const [isLassoing, setIsLassoing] = useState<boolean>(false);
 
   // Interaction Mode Refs for Dragging/Rotating Selection
   const isRotatingRef = useRef<boolean>(false);
   const isTranslatingRef = useRef<boolean>(false);
+  const activeHandleRef = useRef<string | null>(null); // 'nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w', 'rotate', 'crop-nw', etc.
+  const activeImageStartRef = useRef<ImageElement | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastAngleRadRef = useRef<number>(0);
 
@@ -173,15 +206,36 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     shapesRef.current = shapes;
   }, [shapes]);
 
-  // Sync internal strokes with props
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  // Load and cache Image objects whenever images list updates
+  useEffect(() => {
+    images.forEach((imgItem) => {
+      if (!loadedImagesMapRef.current.has(imgItem.id) || loadedImagesMapRef.current.get(imgItem.id)?.src !== imgItem.src) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          loadedImagesMapRef.current.set(imgItem.id, img);
+        };
+        img.src = imgItem.src;
+      }
+    });
+  }, [images]);
+
+  // Sync internal strokes, shapes, and images with page/pdf props
   useEffect(() => {
     if (page) {
       const initialStrokes = page.strokes || [];
       const initialShapes = page.shapes || [];
+      const initialImages = page.images || [];
       setStrokes(initialStrokes);
       setShapes(initialShapes);
+      setImages(initialImages);
       strokesRef.current = initialStrokes;
       shapesRef.current = initialShapes;
+      imagesRef.current = initialImages;
 
       // Trigger initial handwriting analysis
       const fb = analyzeHandwritingQuality(initialStrokes, activeTemplate || undefined);
@@ -190,20 +244,59 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const pdfAnno = pdf.annotations?.[pdfPageNum];
       const initialStrokes = pdfAnno?.strokes || [];
       const initialShapes = pdfAnno?.shapes || [];
+      const initialImages = pdfAnno?.images || [];
       setStrokes(initialStrokes);
       setShapes(initialShapes);
+      setImages(initialImages);
       strokesRef.current = initialStrokes;
       shapesRef.current = initialShapes;
+      imagesRef.current = initialImages;
     }
   }, [page, pdf, pdfPageNum]);
 
-  // Save Canvas Data
+  // Load & Render PDF Page via PDF.js when in PDF mode
+  useEffect(() => {
+    if (!pdf || !pdf.url) {
+      pdfCanvasCacheRef.current = null;
+      return;
+    }
+
+    let isMounted = true;
+    setIsPdfLoading(true);
+
+    const renderPdf = async () => {
+      try {
+        if (!pdfDocRef.current || (pdfDocRef.current as any)._sourceUrl !== pdf.url) {
+          const doc = await loadPdfDocument(pdf.url);
+          (doc as any)._sourceUrl = pdf.url;
+          pdfDocRef.current = doc;
+        }
+
+        const rendered = await renderPdfPageToCanvas(pdfDocRef.current, pdfPageNum, 1600);
+        if (isMounted) {
+          pdfCanvasCacheRef.current = rendered.canvas;
+          setIsPdfLoading(false);
+        }
+      } catch (err) {
+        console.warn('Could not render PDF page with PDF.js:', err);
+        if (isMounted) setIsPdfLoading(false);
+      }
+    };
+
+    renderPdf();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pdf?.url, pdfPageNum]);
+
+  // Save Canvas Data to Parent
   const saveCanvasData = useCallback(
-    (newStrokes: Stroke[], newShapes: ShapeElement[]) => {
+    (newStrokes: Stroke[], newShapes: ShapeElement[], newImages: ImageElement[]) => {
       if (page && onUpdatePageStrokes) {
-        onUpdatePageStrokes(page.id, newStrokes, newShapes);
+        onUpdatePageStrokes(page.id, newStrokes, newShapes, newImages);
       } else if (pdf && onUpdatePdfAnnotations) {
-        onUpdatePdfAnnotations(pdf.id, pdfPageNum, newStrokes, newShapes);
+        onUpdatePdfAnnotations(pdf.id, pdfPageNum, newStrokes, newShapes, newImages);
       }
     },
     [page, pdf, pdfPageNum, onUpdatePageStrokes, onUpdatePdfAnnotations]
@@ -221,7 +314,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     const pressure = e.pointerType === 'pen' ? e.pressure : 0.5;
 
-    // Throttle pressure updates to App.tsx state to avoid forcing full tree re-renders on every mouse pixel move
     const now = Date.now();
     if (onUpdateTabletPressure && now - lastPressureUpdateRef.current > 150) {
       lastPressureUpdateRef.current = now;
@@ -238,7 +330,13 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     };
   };
 
-  // Compute Selection Bounding Box
+  // Selected Image Element
+  const selectedImage = useMemo(() => {
+    if (!selectedImageId) return null;
+    return images.find((img) => img.id === selectedImageId) || null;
+  }, [images, selectedImageId]);
+
+  // Compute Selection Bounding Box (strokes & shapes)
   const getSelectionBounds = useCallback(() => {
     const strokeIdSet = new Set(selectedStrokeIds);
     const shapeIdSet = new Set(selectedShapeIds);
@@ -290,7 +388,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   // Translate Selected Items by (dx, dy)
   const translateSelectedItems = useCallback(
     (dx: number, dy: number) => {
-      if (selectedStrokeIds.length === 0 && selectedShapeIds.length === 0) return;
+      if (selectedStrokeIds.length === 0 && selectedShapeIds.length === 0 && !selectedImageId) return;
 
       const strokeIdSet = new Set(selectedStrokeIds);
       const shapeIdSet = new Set(selectedShapeIds);
@@ -312,19 +410,29 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return sh;
       });
 
+      const updatedImages = imagesRef.current.map((img) => {
+        if (img.id === selectedImageId && !img.locked) {
+          return { ...img, x: img.x + dx, y: img.y + dy };
+        }
+        return img;
+      });
+
       setStrokes(updatedStrokes);
       strokesRef.current = updatedStrokes;
       setShapes(updatedShapes);
       shapesRef.current = updatedShapes;
-      saveCanvasData(updatedStrokes, updatedShapes);
+      setImages(updatedImages);
+      imagesRef.current = updatedImages;
+
+      saveCanvasData(updatedStrokes, updatedShapes, updatedImages);
     },
-    [selectedStrokeIds, selectedShapeIds, saveCanvasData]
+    [selectedStrokeIds, selectedShapeIds, selectedImageId, saveCanvasData]
   );
 
   // Rotate Selected Items by dAngleRad around center (cx, cy)
   const rotateSelectedItems = useCallback(
     (dAngleRad: number, cx: number, cy: number) => {
-      if (selectedStrokeIds.length === 0 && selectedShapeIds.length === 0) return;
+      if (selectedStrokeIds.length === 0 && selectedShapeIds.length === 0 && !selectedImageId) return;
 
       const strokeIdSet = new Set(selectedStrokeIds);
       const shapeIdSet = new Set(selectedShapeIds);
@@ -359,13 +467,24 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return sh;
       });
 
+      const updatedImages = imagesRef.current.map((img) => {
+        if (img.id === selectedImageId && !img.locked) {
+          const newRot = ((img.rotation || 0) + dAngleDeg + 360) % 360;
+          return { ...img, rotation: newRot };
+        }
+        return img;
+      });
+
       setStrokes(updatedStrokes);
       strokesRef.current = updatedStrokes;
       setShapes(updatedShapes);
       shapesRef.current = updatedShapes;
-      saveCanvasData(updatedStrokes, updatedShapes);
+      setImages(updatedImages);
+      imagesRef.current = updatedImages;
+
+      saveCanvasData(updatedStrokes, updatedShapes, updatedImages);
     },
-    [selectedStrokeIds, selectedShapeIds, saveCanvasData]
+    [selectedStrokeIds, selectedShapeIds, selectedImageId, saveCanvasData]
   );
 
   // Delete Selected Items
@@ -375,22 +494,343 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     const remainingStrokes = strokesRef.current.filter((st) => !strokeIdSet.has(st.id));
     const remainingShapes = shapesRef.current.filter((sh) => !shapeIdSet.has(sh.id));
+    const remainingImages = imagesRef.current.filter((img) => img.id !== selectedImageId);
 
     setStrokes(remainingStrokes);
     strokesRef.current = remainingStrokes;
     setShapes(remainingShapes);
     shapesRef.current = remainingShapes;
+    setImages(remainingImages);
+    imagesRef.current = remainingImages;
 
     setSelectedStrokeIds([]);
     setSelectedShapeIds([]);
-    saveCanvasData(remainingStrokes, remainingShapes);
-  }, [selectedStrokeIds, selectedShapeIds, saveCanvasData]);
+    setSelectedImageId(null);
+    setIsCropping(false);
+
+    saveCanvasData(remainingStrokes, remainingShapes, remainingImages);
+  }, [selectedStrokeIds, selectedShapeIds, selectedImageId, saveCanvasData]);
+
+  // Update a specific image
+  const handleUpdateImage = useCallback(
+    (updatedFields: Partial<ImageElement>) => {
+      if (!selectedImageId) return;
+      const updated = imagesRef.current.map((img) =>
+        img.id === selectedImageId ? { ...img, ...updatedFields } : img
+      );
+      setImages(updated);
+      imagesRef.current = updated;
+      saveCanvasData(strokesRef.current, shapesRef.current, updated);
+    },
+    [selectedImageId, saveCanvasData]
+  );
+
+  // Duplicate selected image
+  const handleDuplicateImage = useCallback(() => {
+    if (!selectedImage) return;
+    const duplicated: ImageElement = {
+      ...selectedImage,
+      id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      x: selectedImage.x + 30,
+      y: selectedImage.y + 30,
+    };
+    const updated = [...imagesRef.current, duplicated];
+    setImages(updated);
+    imagesRef.current = updated;
+    setSelectedImageId(duplicated.id);
+    saveCanvasData(strokesRef.current, shapesRef.current, updated);
+  }, [selectedImage, saveCanvasData]);
+
+  // Reorder Image Z-Index (Bring Forward / Send Backward)
+  const handleReorderImage = useCallback(
+    (direction: 'forward' | 'backward') => {
+      if (!selectedImageId) return;
+      const index = imagesRef.current.findIndex((img) => img.id === selectedImageId);
+      if (index === -1) return;
+
+      const newImages = [...imagesRef.current];
+      if (direction === 'forward' && index < newImages.length - 1) {
+        const item = newImages.splice(index, 1)[0];
+        newImages.splice(index + 1, 0, item);
+      } else if (direction === 'backward' && index > 0) {
+        const item = newImages.splice(index, 1)[0];
+        newImages.splice(index - 1, 0, item);
+      }
+
+      setImages(newImages);
+      imagesRef.current = newImages;
+      saveCanvasData(strokesRef.current, shapesRef.current, newImages);
+    },
+    [selectedImageId, saveCanvasData]
+  );
+
+  // Crop Controls
+  const handleToggleCrop = useCallback(() => {
+    if (!selectedImage) return;
+    if (isCropping) {
+      setIsCropping(false);
+    } else {
+      setIsCropping(true);
+      setCropBox(selectedImage.crop || { x: 0, y: 0, width: 1, height: 1 });
+    }
+  }, [selectedImage, isCropping]);
+
+  const handleApplyCrop = useCallback(() => {
+    if (!selectedImage) return;
+    handleUpdateImage({ crop: cropBox });
+    setIsCropping(false);
+  }, [selectedImage, cropBox, handleUpdateImage]);
+
+  const handleCancelCrop = useCallback(() => {
+    setIsCropping(false);
+  }, []);
+
+  // Helper to insert an ImageElement from DataURL/Blob
+  const insertImageOnCanvas = useCallback(
+    (dataUrl: string, name = 'Image', srcType: ImageElement['sourceType'] = 'image', initialX?: number, initialY?: number) => {
+      const tempImg = new Image();
+      tempImg.onload = () => {
+        const naturalW = tempImg.naturalWidth || 600;
+        const naturalH = tempImg.naturalHeight || 400;
+
+        // Default fit to max 450px width while keeping ratio
+        const displayW = Math.min(450, naturalW);
+        const displayH = Math.round((displayW / naturalW) * naturalH);
+
+        // Center on canvas viewport if coordinates not specified
+        const container = containerRef.current;
+        const targetX =
+          initialX !== undefined
+            ? initialX
+            : container
+            ? (container.clientWidth / 2 - panX) / zoom - displayW / 2
+            : 100;
+        const targetY =
+          initialY !== undefined
+            ? initialY
+            : container
+            ? (container.clientHeight / 2 - panY) / zoom - displayH / 2
+            : 100;
+
+        const newImage: ImageElement = {
+          id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          src: dataUrl,
+          name,
+          x: Math.max(10, Math.round(targetX)),
+          y: Math.max(10, Math.round(targetY)),
+          width: displayW,
+          height: displayH,
+          naturalWidth: naturalW,
+          naturalHeight: naturalH,
+          opacity: 1,
+          rotation: 0,
+          brightness: 100,
+          contrast: 100,
+          saturation: 100,
+          grayscale: 0,
+          invert: 0,
+          blur: 0,
+          sourceType: srcType,
+        };
+
+        loadedImagesMapRef.current.set(newImage.id, tempImg);
+        const updated = [...imagesRef.current, newImage];
+        setImages(updated);
+        imagesRef.current = updated;
+        setSelectedImageId(newImage.id);
+        setSelectedStrokeIds([]);
+        setSelectedShapeIds([]);
+        saveCanvasData(strokesRef.current, shapesRef.current, updated);
+      };
+      tempImg.src = dataUrl;
+    },
+    [panX, panY, zoom, saveCanvasData]
+  );
+
+  // Helper to load image from URL (web drag / cross-tab / Google Images / Wikipedia / links)
+  const loadImageFromUrlAndInsert = useCallback(
+    (url: string, name = 'Web Image', targetX?: number, targetY?: number) => {
+      if (url.startsWith('data:image/')) {
+        insertImageOnCanvas(url, name, 'image', targetX, targetY);
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth || 600;
+          c.height = img.naturalHeight || 400;
+          const ctx = c.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            const dataUrl = c.toDataURL('image/png');
+            insertImageOnCanvas(dataUrl, name, 'image', targetX, targetY);
+            return;
+          }
+        } catch {
+          // CORS fallback
+        }
+        insertImageOnCanvas(url, name, 'image', targetX, targetY);
+      };
+      img.onerror = () => {
+        insertImageOnCanvas(url, name, 'image', targetX, targetY);
+      };
+      img.src = url;
+    },
+    [insertImageOnCanvas]
+  );
+
+  // File Drop & Paste Listeners
+  const handleFileDropOrPaste = useCallback(
+    async (files: FileList | File[], dropX?: number, dropY?: number) => {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const offsetX = dropX !== undefined ? dropX + i * 35 : undefined;
+        const offsetY = dropY !== undefined ? dropY + i * 35 : undefined;
+
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            if (e.target?.result) {
+              insertImageOnCanvas(e.target.result as string, file.name, 'image', offsetX, offsetY);
+            }
+          };
+          reader.readAsDataURL(file);
+        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+          try {
+            const pdfDoc = await loadPdfDocument(file);
+            const rendered = await renderPdfPageToCanvas(pdfDoc, 1, 1200);
+            insertImageOnCanvas(rendered.dataUrl, `${file.name} (Pg 1)`, 'pdf-page', offsetX, offsetY);
+          } catch (err) {
+            console.warn('Could not extract PDF page as image:', err);
+          }
+        }
+      }
+    },
+    [insertImageOnCanvas]
+  );
+
+  // Universal DataTransfer Processor (Local Files, Web Images, HTML fragments, URLs)
+  const handleDataTransferDrop = useCallback(
+    async (dataTransfer: DataTransfer, dropX?: number, dropY?: number) => {
+      // 1. Files from disk (images & PDFs)
+      if (dataTransfer.files && dataTransfer.files.length > 0) {
+        await handleFileDropOrPaste(dataTransfer.files, dropX, dropY);
+        return;
+      }
+
+      // 2. Dragged from webpage (HTML img src or link)
+      const htmlData = dataTransfer.getData('text/html');
+      if (htmlData) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlData, 'text/html');
+        const imgTags = doc.querySelectorAll('img');
+        if (imgTags.length > 0) {
+          imgTags.forEach((imgTag, idx) => {
+            const src = imgTag.getAttribute('src');
+            if (src) {
+              const offsetX = dropX !== undefined ? dropX + idx * 35 : undefined;
+              const offsetY = dropY !== undefined ? dropY + idx * 35 : undefined;
+              loadImageFromUrlAndInsert(src, imgTag.alt || 'Web Image', offsetX, offsetY);
+            }
+          });
+          return;
+        }
+      }
+
+      // 3. URI List or Plain Text URL (e.g. dragging image link or image URL from browser)
+      const uriList = dataTransfer.getData('text/uri-list');
+      const plainText = dataTransfer.getData('text/plain');
+      const candidateUrls = (uriList || plainText || '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s && !s.startsWith('#'));
+
+      for (let i = 0; i < candidateUrls.length; i++) {
+        const url = candidateUrls[i];
+        if (
+          url.startsWith('http://') ||
+          url.startsWith('https://') ||
+          url.startsWith('data:image/') ||
+          url.startsWith('blob:')
+        ) {
+          const offsetX = dropX !== undefined ? dropX + i * 35 : undefined;
+          const offsetY = dropY !== undefined ? dropY + i * 35 : undefined;
+          loadImageFromUrlAndInsert(url, 'Web Image', offsetX, offsetY);
+        }
+      }
+    },
+    [handleFileDropOrPaste, loadImageFromUrlAndInsert]
+  );
+
+  // Clipboard Paste Event Listener
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (editingTextElement) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleFileDropOrPaste([file]);
+            return;
+          }
+        }
+      }
+
+      // Also support pasting image URLs
+      const text = e.clipboardData?.getData('text/plain');
+      if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('data:image/'))) {
+        if (/\.(png|jpe?g|webp|svg|gif|avif)(\?.*)?$/i.test(text) || text.startsWith('data:image/')) {
+          e.preventDefault();
+          loadImageFromUrlAndInsert(text.trim(), 'Pasted Image');
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [editingTextElement, handleFileDropOrPaste, loadImageFromUrlAndInsert]);
+
+  // Drag and Drop Event Handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const dropWorldX = (e.clientX - rect.left - panX) / zoom;
+    const dropWorldY = (e.clientY - rect.top - panY) / zoom;
+
+    handleDataTransferDrop(e.dataTransfer, dropWorldX, dropWorldY);
+  };
 
   // Keyboard Event Listener for Arrow Keys, Rotation, and Delete
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (editingTextElement) return;
-      if (selectedStrokeIds.length === 0 && selectedShapeIds.length === 0) return;
+      if (
+        selectedStrokeIds.length === 0 &&
+        selectedShapeIds.length === 0 &&
+        !selectedImageId
+      )
+        return;
 
       const step = e.shiftKey ? 10 : 2;
 
@@ -408,12 +848,20 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         translateSelectedItems(0, step);
       } else if (e.key === '[' || (e.key.toLowerCase() === 'r' && e.shiftKey)) {
         e.preventDefault();
-        const bounds = getSelectionBounds();
-        if (bounds) rotateSelectedItems((-15 * Math.PI) / 180, bounds.cx, bounds.cy);
+        if (selectedImage) {
+          rotateSelectedItems((-15 * Math.PI) / 180, selectedImage.x + selectedImage.width / 2, selectedImage.y + selectedImage.height / 2);
+        } else {
+          const bounds = getSelectionBounds();
+          if (bounds) rotateSelectedItems((-15 * Math.PI) / 180, bounds.cx, bounds.cy);
+        }
       } else if (e.key === ']' || e.key.toLowerCase() === 'r') {
         e.preventDefault();
-        const bounds = getSelectionBounds();
-        if (bounds) rotateSelectedItems((15 * Math.PI) / 180, bounds.cx, bounds.cy);
+        if (selectedImage) {
+          rotateSelectedItems((15 * Math.PI) / 180, selectedImage.x + selectedImage.width / 2, selectedImage.y + selectedImage.height / 2);
+        } else {
+          const bounds = getSelectionBounds();
+          if (bounds) rotateSelectedItems((15 * Math.PI) / 180, bounds.cx, bounds.cy);
+        }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelectedItems();
@@ -421,6 +869,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         e.preventDefault();
         setSelectedStrokeIds([]);
         setSelectedShapeIds([]);
+        setSelectedImageId(null);
+        setIsCropping(false);
       }
     };
 
@@ -429,6 +879,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   }, [
     selectedStrokeIds,
     selectedShapeIds,
+    selectedImageId,
+    selectedImage,
     editingTextElement,
     translateSelectedItems,
     rotateSelectedItems,
@@ -461,7 +913,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         ctx.lineTo(paperX + width, y);
         ctx.stroke();
       }
-      // Left margin line
       ctx.strokeStyle = '#f87171';
       ctx.beginPath();
       ctx.moveTo(paperX + 70, paperY);
@@ -495,8 +946,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.restore();
   };
 
-  // LAYER 2: Practice Template Guide Background Overlay
-  const renderTemplateOverlay = (ctx: CanvasRenderingContext2D, paperX: number = 60, paperY: number = 60) => {
+  // Render Practice Template Overlay
+  const renderTemplateOverlay = (ctx: CanvasRenderingContext2D, paperX = 60, paperY = 60) => {
     if (!showTemplateOverlay || !activeTemplate) return;
 
     ctx.save();
@@ -524,7 +975,137 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.restore();
   };
 
-  // Render Single Stroke
+  // Render Single Image Element onto Context
+  const renderImage = (ctx: CanvasRenderingContext2D, imgElement: ImageElement) => {
+    const imgObj = loadedImagesMapRef.current.get(imgElement.id);
+    if (!imgObj || !imgObj.complete) return;
+
+    const isSelected = selectedImageId === imgElement.id;
+    const w = imgElement.width;
+    const h = imgElement.height;
+
+    ctx.save();
+    ctx.globalAlpha = imgElement.opacity ?? 1.0;
+
+    // Apply Transformation (Translation, Rotation, Flip)
+    ctx.translate(imgElement.x + w / 2, imgElement.y + h / 2);
+
+    if (imgElement.rotation) {
+      ctx.rotate((imgElement.rotation * Math.PI) / 180);
+    }
+
+    if (imgElement.flipH || imgElement.flipV) {
+      ctx.scale(imgElement.flipH ? -1 : 1, imgElement.flipV ? -1 : 1);
+    }
+
+    // Apply Filter String (Brightness, Contrast, Invert, Grayscale, Blur)
+    const filters: string[] = [];
+    if (imgElement.brightness && imgElement.brightness !== 100) filters.push(`brightness(${imgElement.brightness}%)`);
+    if (imgElement.contrast && imgElement.contrast !== 100) filters.push(`contrast(${imgElement.contrast}%)`);
+    if (imgElement.saturation && imgElement.saturation !== 100) filters.push(`saturate(${imgElement.saturation}%)`);
+    if (imgElement.grayscale && imgElement.grayscale > 0) filters.push(`grayscale(${imgElement.grayscale}%)`);
+    if (imgElement.invert && imgElement.invert > 0) filters.push(`invert(${imgElement.invert}%)`);
+    if (imgElement.blur && imgElement.blur > 0) filters.push(`blur(${imgElement.blur}px)`);
+
+    if (filters.length > 0 && ctx.filter !== undefined) {
+      ctx.filter = filters.join(' ');
+    }
+
+    // Draw Image (with Crop or full)
+    const effectiveCrop = isSelected && isCropping ? cropBox : imgElement.crop;
+    if (effectiveCrop) {
+      const natW = imgObj.naturalWidth || w;
+      const natH = imgObj.naturalHeight || h;
+      const sx = Math.max(0, effectiveCrop.x * natW);
+      const sy = Math.max(0, effectiveCrop.y * natH);
+      const sw = Math.min(natW - sx, effectiveCrop.width * natW);
+      const sh = Math.min(natH - sy, effectiveCrop.height * natH);
+
+      ctx.drawImage(imgObj, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.drawImage(imgObj, -w / 2, -h / 2, w, h);
+    }
+
+    ctx.restore();
+
+    // Draw Selection Outline & Handles for selected image
+    if (isSelected) {
+      ctx.save();
+      ctx.translate(imgElement.x + w / 2, imgElement.y + h / 2);
+      if (imgElement.rotation) ctx.rotate((imgElement.rotation * Math.PI) / 180);
+
+      // Bounding Outline
+      ctx.strokeStyle = isCropping ? '#38bdf8' : '#0ea5e9';
+      ctx.lineWidth = (isCropping ? 2 : 1.5) / zoom;
+      ctx.setLineDash(isCropping ? [4 / zoom, 4 / zoom] : []);
+      ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+      if (isCropping) {
+        // Cropping Handles & Darkened Border
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(-w / 2 - 2000, -h / 2 - 2000, 4000, 2000); // Top scrim
+        ctx.fillRect(-w / 2 - 2000, h / 2, 4000, 2000); // Bottom scrim
+        ctx.fillRect(-w / 2 - 2000, -h / 2, 2000, h); // Left scrim
+        ctx.fillRect(w / 2, -h / 2, 2000, h); // Right scrim
+
+        // Crop Corners
+        const cropHandles = [
+          { x: -w / 2, y: -h / 2 },
+          { x: w / 2, y: -h / 2 },
+          { x: -w / 2, y: h / 2 },
+          { x: w / 2, y: h / 2 },
+        ];
+        ctx.fillStyle = '#38bdf8';
+        cropHandles.forEach((ch) => {
+          ctx.fillRect(ch.x - 7 / zoom, ch.y - 7 / zoom, 14 / zoom, 14 / zoom);
+        });
+      } else {
+        // Rotation Handle Stem & Knob
+        const rotY = -h / 2 - 24 / zoom;
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.lineWidth = 1.2 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(0, -h / 2);
+        ctx.lineTo(0, rotY);
+        ctx.stroke();
+
+        ctx.fillStyle = '#0ea5e9';
+        ctx.beginPath();
+        ctx.arc(0, rotY, 5 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1 / zoom;
+        ctx.stroke();
+
+        // 8 Transform Resize Handles
+        const handles = [
+          { x: -w / 2, y: -h / 2 }, // NW
+          { x: 0, y: -h / 2 }, // N
+          { x: w / 2, y: -h / 2 }, // NE
+          { x: w / 2, y: 0 }, // E
+          { x: w / 2, y: h / 2 }, // SE
+          { x: 0, y: h / 2 }, // S
+          { x: -w / 2, y: h / 2 }, // SW
+          { x: -w / 2, y: 0 }, // W
+        ];
+
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#0ea5e9';
+        ctx.lineWidth = 1.5 / zoom;
+
+        handles.forEach((h) => {
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, 4.5 / zoom, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+
+      ctx.restore();
+    }
+  };
+
+  // Render Stroke
   const renderStroke = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
     const pts = stroke.smoothedPoints || stroke.points;
     if (pts.length < 2) return;
@@ -567,7 +1148,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.restore();
   };
 
-  // Render Shape or Text or Sticky or Polygon
+  // Render Shape or Text or Sticky
   const renderShape = (ctx: CanvasRenderingContext2D, shape: ShapeElement) => {
     const isSelected = selectedShapeIds.includes(shape.id);
 
@@ -581,7 +1162,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.setLineDash([4 / zoom, 4 / zoom]);
     }
 
-    // Apply Rotation Transform if present
     if (shape.rotation) {
       const w = shape.width || 120;
       const h = shape.height || 80;
@@ -594,9 +1174,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const w = shape.width || 120;
       const h = shape.height || 80;
       ctx.strokeRect(shape.x, shape.y, w, h);
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fillRect(shape.x, shape.y, w, h);
-      }
+      if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fillRect(shape.x, shape.y, w, h);
     } else if (shape.type === 'circle') {
       ctx.beginPath();
       const rx = Math.abs(shape.width || 60) / 2;
@@ -608,120 +1186,22 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       } else {
         ctx.arc(cx, cy, rx, 0, Math.PI * 2);
       }
+      if (shape.fillColor && shape.fillColor !== 'transparent') ctx.fill();
       ctx.stroke();
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fill();
-      }
-    } else if (shape.type === 'polygon') {
-      const w = shape.width || 100;
-      const h = shape.height || 100;
-      ctx.beginPath();
-      ctx.moveTo(shape.x + w / 2, shape.y);
-      ctx.lineTo(shape.x + w, shape.y + h);
-      ctx.lineTo(shape.x, shape.y + h);
-      ctx.closePath();
-      ctx.stroke();
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fill();
-      }
-    } else if (shape.type === 'diamond') {
-      const w = shape.width || 100;
-      const h = shape.height || 100;
-      ctx.beginPath();
-      ctx.moveTo(shape.x + w / 2, shape.y);
-      ctx.lineTo(shape.x + w, shape.y + h / 2);
-      ctx.lineTo(shape.x + w / 2, shape.y + h);
-      ctx.lineTo(shape.x, shape.y + h / 2);
-      ctx.closePath();
-      ctx.stroke();
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fill();
-      }
-    } else if (shape.type === 'hexagon') {
-      const w = shape.width || 100;
-      const h = shape.height || 100;
-      const cx = shape.x + w / 2;
-      const cy = shape.y + h / 2;
-      const rx = w / 2;
-      const ry = h / 2;
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const angle = (i * Math.PI) / 3;
-        const x = cx + rx * Math.cos(angle);
-        const y = cy + ry * Math.sin(angle);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fill();
-      }
-    } else if (shape.type === 'star') {
-      const w = shape.width || 100;
-      const h = shape.height || 100;
-      const cx = shape.x + w / 2;
-      const cy = shape.y + h / 2;
-      const outerR = Math.min(Math.abs(w), Math.abs(h)) / 2;
-      const innerR = outerR * 0.4;
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? outerR : innerR;
-        const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        const x = cx + r * Math.cos(angle);
-        const y = cy + r * Math.sin(angle);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      if (shape.fillColor && shape.fillColor !== 'transparent') {
-        ctx.fill();
-      }
-    } else if (shape.type === 'arrow' || shape.type === 'line') {
-      const endX = shape.x + (shape.width || 120);
-      const endY = shape.y + (shape.height || 0);
-
-      ctx.beginPath();
-      ctx.moveTo(shape.x, shape.y);
-      ctx.lineTo(endX, endY);
-      ctx.stroke();
-
-      if (shape.type === 'arrow') {
-        const angle = Math.atan2(endY - shape.y, endX - shape.x);
-        const headLen = Math.max(10, shape.strokeWidth * 3);
-        ctx.fillStyle = shape.color;
-        ctx.beginPath();
-        ctx.moveTo(endX, endY);
-        ctx.lineTo(
-          endX - headLen * Math.cos(angle - Math.PI / 6),
-          endY - headLen * Math.sin(angle - Math.PI / 6)
-        );
-        ctx.lineTo(
-          endX - headLen * Math.cos(angle + Math.PI / 6),
-          endY - headLen * Math.sin(angle + Math.PI / 6)
-        );
-        ctx.closePath();
-        ctx.fill();
-      }
     } else if (shape.type === 'sticky') {
       const width = shape.width || 200;
       const height = shape.height || 130;
-
       ctx.fillStyle = '#fef08a';
       ctx.fillRect(shape.x, shape.y, width, height);
-
       ctx.fillStyle = '#fde047';
       ctx.fillRect(shape.x, shape.y, width, 18);
-
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '13px sans-serif';
-      const text = shape.text || 'Sticky Note';
-      ctx.fillText(text, shape.x + 10, shape.y + 40, width - 20);
-
       ctx.fillStyle = '#854d0e';
       ctx.font = '10px sans-serif';
-      ctx.fillText('⁞⁞ Drag', shape.x + width - 42, shape.y + 13);
+      ctx.fillText('Sticky Note', shape.x + 8, shape.y + 13);
+      ctx.fillStyle = '#1e293b';
+      ctx.font = '13px sans-serif';
+      const text = shape.text || '';
+      ctx.fillText(text, shape.x + 10, shape.y + 40, width - 20);
     } else if (shape.type === 'text') {
       const text = shape.text || 'Text Box';
       ctx.font = '18px sans-serif';
@@ -744,7 +1224,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     ctx.clearRect(0, 0, width, height);
 
-    // Fill outer workspace backdrop
+    // Workspace backdrop
     ctx.fillStyle = theme.editorBg;
     ctx.fillRect(0, 0, width, height);
 
@@ -754,19 +1234,23 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
     const isFlexible = pageAspectRatio === 'flexible';
+    const isInfinite = pageAspectRatio === 'infinite';
 
     let pageWidth = pagePreset.width || 1123;
     let pageHeight = pagePreset.height || 794;
 
     if (isFlexible || pageWidth === 0) {
-      pageWidth = Math.max(300, (width - 48) / zoom);
-      pageHeight = Math.max(300, (height - 48) / zoom);
+      pageWidth = Math.max(300, width / zoom);
+      pageHeight = Math.max(300, height / zoom);
+    } else if (isInfinite) {
+      pageWidth = Math.max(4500, (width * 3) / zoom);
+      pageHeight = Math.max(3200, (height * 3) / zoom);
     }
 
     const paperX = 0;
     const paperY = 0;
 
-    // LAYER 1: A4 Paper Card Drop Shadow & Crisp Paper Canvas
+    // LAYER 1: A4 Paper Card Drop Shadow & Paper Canvas
     ctx.save();
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.fillRect(paperX + 6 / zoom, paperY + 6 / zoom, pageWidth, pageHeight);
@@ -776,29 +1260,37 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     ctx.fillRect(paperX, paperY, pageWidth, pageHeight);
     ctx.restore();
 
+    // PDF Background Rendering (if in PDF mode)
+    if (pdf && pdfCanvasCacheRef.current) {
+      ctx.drawImage(pdfCanvasCacheRef.current, paperX, paperY, pageWidth, pageHeight);
+    } else {
+      // Render Grid Paper Background
+      renderBackgroundGrid(ctx, paperX, paperY, pageWidth, pageHeight, page?.template || 'ruled');
+    }
+
     // Page Border Outline
     ctx.strokeStyle = currentTheme.includes('dark') ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.18)';
     ctx.lineWidth = 1 / zoom;
     ctx.strokeRect(paperX, paperY, pageWidth, pageHeight);
 
-    // Render Grid Paper Background
-    renderBackgroundGrid(ctx, paperX, paperY, pageWidth, pageHeight, page?.template || 'ruled');
-
     // LAYER 2: Practice Template Guide Background Overlay
     renderTemplateOverlay(ctx, paperX, paperY);
 
-    // LAYER 3: Render Saved Shapes, Text Boxes & Sticky Cards
+    // LAYER 3: Render Images (under strokes & shapes)
+    imagesRef.current.forEach((img) => renderImage(ctx, img));
+
+    // LAYER 4: Render Shapes, Text Boxes & Sticky Notes
     shapesRef.current.forEach((s) => renderShape(ctx, s));
 
-    // LAYER 3.5: Render Active Shape Rubberband Preview
+    // LAYER 4.5: Render Active Shape Rubberband Preview
     if (activeShapeRef.current) {
       renderShape(ctx, activeShapeRef.current);
     }
 
-    // LAYER 3: Render Saved Strokes
+    // LAYER 5: Render Saved Strokes
     strokesRef.current.forEach((st) => renderStroke(ctx, st));
 
-    // LAYER 3: Render Active Pointer Stroke (Zero Latency Live Pass)
+    // LAYER 5.5: Render Active Pointer Stroke
     const activePts = activePointsRef.current;
     if (isDrawingRef.current && activePts.length > 0) {
       ctx.save();
@@ -862,18 +1354,15 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.restore();
     }
 
-    // LAYER 4: SELECTION BOUNDING BOX & ANGLE ROTATION HANDLE KNOB
+    // Selection Bounds for strokes/shapes
     const bounds = getSelectionBounds();
     if (bounds) {
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 1.5 / zoom;
       ctx.setLineDash([5 / zoom, 3 / zoom]);
-
-      // Selection Frame Rectangle
       ctx.strokeRect(bounds.minX, bounds.minY, bounds.width, bounds.height);
 
-      // Rotation Handle Stem Line
       const handleStemY = bounds.minY - 26 / zoom;
       ctx.beginPath();
       ctx.setLineDash([]);
@@ -881,7 +1370,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.lineTo(bounds.cx, handleStemY);
       ctx.stroke();
 
-      // Rotation Handle Circular Knob
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
       ctx.arc(bounds.cx, handleStemY, 6 / zoom, 0, Math.PI * 2);
@@ -889,24 +1377,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1 / zoom;
       ctx.stroke();
-
-      // Corner Sizing Handle Dots
-      const handles = [
-        { x: bounds.minX, y: bounds.minY },
-        { x: bounds.maxX, y: bounds.minY },
-        { x: bounds.minX, y: bounds.maxY },
-        { x: bounds.maxX, y: bounds.maxY },
-      ];
-      ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = '#007acc';
-      ctx.lineWidth = 1.5 / zoom;
-      handles.forEach((h) => {
-        ctx.beginPath();
-        ctx.arc(h.x, h.y, 4 / zoom, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      });
-
       ctx.restore();
     }
 
@@ -916,6 +1386,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     panY,
     zoom,
     page,
+    pdf,
     tool,
     color,
     strokeWidth,
@@ -929,6 +1400,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     boxSelectRect,
     selectedStrokeIds,
     selectedShapeIds,
+    selectedImageId,
+    isCropping,
+    cropBox,
     pageAspectRatio,
     theme,
   ]);
@@ -983,12 +1457,49 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     setPanY(targetPanY);
   }, [pageAspectRatio]);
 
+  // Fit Full Screen (Maximum Working Area Edge-to-Edge)
+  const fitFullScreenPage = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+    if (pageAspectRatio === 'flexible') {
+      setZoom(1.0);
+      setPanX(0);
+      setPanY(0);
+      return;
+    }
+
+    const pWidth = pagePreset.width || 1123;
+    const pHeight = pagePreset.height || 794;
+    const fitZoom = Math.max(0.25, Math.min(w / pWidth, h / pHeight));
+
+    setZoom(fitZoom);
+    setPanX(Math.round((w - pWidth * fitZoom) / 2));
+    setPanY(Math.round((h - pHeight * fitZoom) / 2));
+  }, [pageAspectRatio]);
+
+  // Fit Page Width
+  const fitWidthPage = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const w = container.clientWidth;
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+    const pWidth = pagePreset.width || 1123;
+    const targetZoom = Math.max(0.2, (w - 24) / pWidth);
+    setZoom(targetZoom);
+    setPanX(12);
+  }, [pageAspectRatio]);
+
   // Center page on select or aspect ratio change
   useEffect(() => {
     centerAndFitPage();
-  }, [page?.id, pageAspectRatio, centerAndFitPage]);
+  }, [page?.id, pdf?.id, pageAspectRatio, centerAndFitPage]);
 
-  // Container Resize Observer for auto-adjusting working area & page size
+  // Container Resize Observer
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -1000,50 +1511,104 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         if (w > 0 && h > 0 && (canvasRef.current.width !== w || canvasRef.current.height !== h)) {
           canvasRef.current.width = w;
           canvasRef.current.height = h;
-          centerAndFitPage();
+          if (drawCanvasRef.current) drawCanvasRef.current();
         }
       }
     };
 
     updateCanvasSize();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateCanvasSize();
-    });
-
-    resizeObserver.observe(container);
-
-    window.addEventListener('resize', updateCanvasSize);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateCanvasSize);
-    };
-  }, [centerAndFitPage]);
+    const ro = new ResizeObserver(updateCanvasSize);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   // Pointer Down Handler
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (e.buttons === 4 || e.spaceKey) {
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
       return;
     }
 
-    const point = getCanvasCoords(e);
-    const bounds = getSelectionBounds();
+    if (e.button !== 0 && e.pointerType !== 'pen') return;
 
-    // 1. Check Rotation Handle Click
+    const point = getCanvasCoords(e);
+
+    // 1. CHECK SELECTED IMAGE RESIZE/ROTATE HANDLES OR BODY
+    if (selectedImage) {
+      const img = selectedImage;
+      const w = img.width;
+      const h = img.height;
+      const cx = img.x + w / 2;
+      const cy = img.y + h / 2;
+
+      // Transform world point into image local coordinate space
+      const cos = Math.cos(-((img.rotation || 0) * Math.PI) / 180);
+      const sin = Math.sin(-((img.rotation || 0) * Math.PI) / 180);
+      const localX = (point.x - cx) * cos - (point.y - cy) * sin;
+      const localY = (point.x - cx) * sin + (point.y - cy) * cos;
+
+      const hitRadius = 12 / zoom;
+
+      // Check Rotation Knob Handle
+      const rotY = -h / 2 - 24 / zoom;
+      if (!isCropping && Math.hypot(localX - 0, localY - rotY) <= hitRadius) {
+        isRotatingRef.current = true;
+        activeImageStartRef.current = { ...img };
+        lastAngleRadRef.current = Math.atan2(point.y - cy, point.x - cx);
+        return;
+      }
+
+      // Check 8 Sizing Handles
+      if (!isCropping) {
+        const handleMap = [
+          { type: 'nw', x: -w / 2, y: -h / 2 },
+          { type: 'n', x: 0, y: -h / 2 },
+          { type: 'ne', x: w / 2, y: -h / 2 },
+          { type: 'e', x: w / 2, y: 0 },
+          { type: 'se', x: w / 2, y: h / 2 },
+          { type: 's', x: 0, y: h / 2 },
+          { type: 'sw', x: -w / 2, y: h / 2 },
+          { type: 'w', x: -w / 2, y: 0 },
+        ];
+
+        for (const hm of handleMap) {
+          if (Math.hypot(localX - hm.x, localY - hm.y) <= hitRadius) {
+            activeHandleRef.current = hm.type;
+            activeImageStartRef.current = { ...img };
+            lastPointerRef.current = { x: point.x, y: point.y };
+            return;
+          }
+        }
+      }
+
+      // Check Image Body Grab (for cursor tool)
+      if (
+        (tool === 'cursor' || isCropping) &&
+        localX >= -w / 2 &&
+        localX <= w / 2 &&
+        localY >= -h / 2 &&
+        localY <= h / 2
+      ) {
+        isTranslatingRef.current = true;
+        lastPointerRef.current = { x: point.x, y: point.y };
+        return;
+      }
+    }
+
+    // 2. CHECK SELECTION ROTATION KNOB OR BOUNDING BOX (FOR STROKES/SHAPES)
+    const bounds = getSelectionBounds();
     if (bounds) {
-      const handleY = bounds.minY - 26 / zoom;
-      const distToRotationHandle = Math.hypot(point.x - bounds.cx, point.y - handleY);
-      if (distToRotationHandle < 18 / zoom) {
+      const knobY = bounds.minY - 26 / zoom;
+      const hitRadius = 12 / zoom;
+      if (Math.hypot(point.x - bounds.cx, point.y - knobY) <= hitRadius) {
         isRotatingRef.current = true;
         lastAngleRadRef.current = Math.atan2(point.y - bounds.cy, point.x - bounds.cx);
         return;
       }
 
-      // 2. Check Inside Selection Box Click (Translation / Dragging Move)
       if (
+        tool === 'cursor' &&
         point.x >= bounds.minX &&
         point.x <= bounds.maxX &&
         point.y >= bounds.minY &&
@@ -1057,6 +1622,26 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     // 3. CURSOR TOOL BEHAVIOR: Select & Grab Elements directly
     if (tool === 'cursor') {
+      // Check if clicked an Image
+      const clickedImage = imagesRef.current.slice().reverse().find((img) => {
+        const cx = img.x + img.width / 2;
+        const cy = img.y + img.height / 2;
+        const cos = Math.cos(-((img.rotation || 0) * Math.PI) / 180);
+        const sin = Math.sin(-((img.rotation || 0) * Math.PI) / 180);
+        const lx = (point.x - cx) * cos - (point.y - cy) * sin;
+        const ly = (point.x - cx) * sin + (point.y - cy) * cos;
+        return lx >= -img.width / 2 && lx <= img.width / 2 && ly >= -img.height / 2 && ly <= img.height / 2;
+      });
+
+      if (clickedImage) {
+        setSelectedImageId(clickedImage.id);
+        setSelectedStrokeIds([]);
+        setSelectedShapeIds([]);
+        isTranslatingRef.current = true;
+        lastPointerRef.current = { x: point.x, y: point.y };
+        return;
+      }
+
       // Check if clicking directly on a shape or text element
       const clickedShape = shapesRef.current.slice().reverse().find((elem) => {
         const w = elem.width || (elem.type === 'text' ? 150 : 120);
@@ -1071,6 +1656,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       if (clickedShape) {
         setSelectedShapeIds([clickedShape.id]);
+        setSelectedImageId(null);
         if (!e.shiftKey) setSelectedStrokeIds([]);
         isTranslatingRef.current = true;
         lastPointerRef.current = { x: point.x, y: point.y };
@@ -1084,6 +1670,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
       if (clickedStroke) {
         setSelectedStrokeIds([clickedStroke.id]);
+        setSelectedImageId(null);
         if (!e.shiftKey) setSelectedShapeIds([]);
         isTranslatingRef.current = true;
         lastPointerRef.current = { x: point.x, y: point.y };
@@ -1096,6 +1683,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       setBoxSelectRect({ x: point.x, y: point.y, w: 0, h: 0 });
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
+      setSelectedImageId(null);
+      setIsCropping(false);
       return;
     }
 
@@ -1105,6 +1694,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       setLassoPoints([point]);
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
+      setSelectedImageId(null);
       return;
     }
 
@@ -1138,11 +1728,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       setShapes(remainingShapes);
       shapesRef.current = remainingShapes;
 
-      saveCanvasData(remainingStrokes, remainingShapes);
+      saveCanvasData(remainingStrokes, remainingShapes, imagesRef.current);
       return;
     }
 
-    // 6.5. GEOMETRIC SHAPE TOOL (Drag-to-draw interactive creation)
+    // 6.5. GEOMETRIC SHAPE TOOL
     if (tool === 'shape') {
       isDrawingShapeRef.current = true;
       shapeStartRef.current = { x: point.x, y: point.y };
@@ -1159,10 +1749,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       };
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
+      setSelectedImageId(null);
       return;
     }
 
-    // 7. PEN / BRUSH / FOUNTAIN / PENCIL DRAWING (No accidental dragging!)
+    // 7. PEN / BRUSH / FOUNTAIN / PENCIL DRAWING
     isDrawingRef.current = true;
     activePointsRef.current = [point];
   };
@@ -1170,41 +1761,86 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   // Pointer Move Handler
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isPanning) {
-      const container = containerRef.current;
-      if (container) {
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
-        const pWidth = pagePreset.width || 1123;
-        const pHeight = pagePreset.height || 794;
-
-        const rawPanX = e.clientX - panStart.x;
-        const rawPanY = e.clientY - panStart.y;
-
-        const maxPanX = w - 100;
-        const minPanX = -(pWidth * zoom - 100);
-        const maxPanY = h - 100;
-        const minPanY = -(pHeight * zoom - 100);
-
-        setPanX(Math.min(maxPanX, Math.max(minPanX, rawPanX)));
-        setPanY(Math.min(maxPanY, Math.max(minPanY, rawPanY)));
-      } else {
-        setPanX(e.clientX - panStart.x);
-        setPanY(e.clientY - panStart.y);
-      }
+      setPanX(e.clientX - panStart.x);
+      setPanY(e.clientY - panStart.y);
       return;
     }
 
     const point = getCanvasCoords(e);
 
+    // Handle Active Image Resizing / Handle Drag
+    if (activeHandleRef.current && selectedImage && activeImageStartRef.current) {
+      const handle = activeHandleRef.current;
+      const initial = activeImageStartRef.current;
+      const dx = point.x - lastPointerRef.current.x;
+      const dy = point.y - lastPointerRef.current.y;
+
+      let newW = initial.width;
+      let newH = initial.height;
+      let newX = initial.x;
+      let newY = initial.y;
+
+      const minDim = 30;
+
+      if (handle === 'se') {
+        newW = Math.max(minDim, initial.width + dx);
+        if (e.shiftKey && initial.naturalWidth && initial.naturalHeight) {
+          newH = Math.round((newW / initial.naturalWidth) * initial.naturalHeight);
+        } else {
+          newH = Math.max(minDim, initial.height + dy);
+        }
+      } else if (handle === 'e') {
+        newW = Math.max(minDim, initial.width + dx);
+      } else if (handle === 's') {
+        newH = Math.max(minDim, initial.height + dy);
+      } else if (handle === 'nw') {
+        const proposedW = initial.width - dx;
+        if (proposedW >= minDim) {
+          newW = proposedW;
+          newX = initial.x + dx;
+        }
+        const proposedH = initial.height - dy;
+        if (proposedH >= minDim) {
+          newH = proposedH;
+          newY = initial.y + dy;
+        }
+      } else if (handle === 'ne') {
+        newW = Math.max(minDim, initial.width + dx);
+        const proposedH = initial.height - dy;
+        if (proposedH >= minDim) {
+          newH = proposedH;
+          newY = initial.y + dy;
+        }
+      } else if (handle === 'sw') {
+        const proposedW = initial.width - dx;
+        if (proposedW >= minDim) {
+          newW = proposedW;
+          newX = initial.x + dx;
+        }
+        newH = Math.max(minDim, initial.height + dy);
+      }
+
+      handleUpdateImage({ width: newW, height: newH, x: newX, y: newY });
+      return;
+    }
+
     // Handle Active Rotation Drag
     if (isRotatingRef.current) {
-      const bounds = getSelectionBounds();
-      if (bounds) {
-        const currAngleRad = Math.atan2(point.y - bounds.cy, point.x - bounds.cx);
+      if (selectedImage) {
+        const cx = selectedImage.x + selectedImage.width / 2;
+        const cy = selectedImage.y + selectedImage.height / 2;
+        const currAngleRad = Math.atan2(point.y - cy, point.x - cx);
         const dAngleRad = currAngleRad - lastAngleRadRef.current;
         lastAngleRadRef.current = currAngleRad;
-        rotateSelectedItems(dAngleRad, bounds.cx, bounds.cy);
+        rotateSelectedItems(dAngleRad, cx, cy);
+      } else {
+        const bounds = getSelectionBounds();
+        if (bounds) {
+          const currAngleRad = Math.atan2(point.y - bounds.cy, point.x - bounds.cx);
+          const dAngleRad = currAngleRad - lastAngleRadRef.current;
+          lastAngleRadRef.current = currAngleRad;
+          rotateSelectedItems(dAngleRad, bounds.cx, bounds.cy);
+        }
       }
       return;
     }
@@ -1218,7 +1854,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       return;
     }
 
-    // Handle Active Shape Drag Creation (Rubberband preview)
+    // Handle Active Shape Drag Creation
     if (isDrawingShapeRef.current && shapeStartRef.current && activeShapeRef.current) {
       const startX = shapeStartRef.current.x;
       const startY = shapeStartRef.current.y;
@@ -1275,15 +1911,22 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       return;
     }
 
+    if (activeHandleRef.current) {
+      activeHandleRef.current = null;
+      activeImageStartRef.current = null;
+      saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
+      return;
+    }
+
     if (isRotatingRef.current) {
       isRotatingRef.current = false;
-      saveCanvasData(strokesRef.current, shapesRef.current);
+      saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
       return;
     }
 
     if (isTranslatingRef.current) {
       isTranslatingRef.current = false;
-      saveCanvasData(strokesRef.current, shapesRef.current);
+      saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
       return;
     }
 
@@ -1298,7 +1941,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         const updatedShapes = [...shapesRef.current, finishedShape];
         setShapes(updatedShapes);
         shapesRef.current = updatedShapes;
-        saveCanvasData(strokesRef.current, updatedShapes);
+        saveCanvasData(strokesRef.current, updatedShapes, imagesRef.current);
       }
       return;
     }
@@ -1389,7 +2032,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         const updatedStrokes = [...strokesRef.current, newStroke];
         setStrokes(updatedStrokes);
         strokesRef.current = updatedStrokes;
-        saveCanvasData(updatedStrokes, shapesRef.current);
+        saveCanvasData(updatedStrokes, shapesRef.current, imagesRef.current);
 
         const feedback = analyzeHandwritingQuality(updatedStrokes, activeTemplate || undefined);
         if (onFeedbackUpdate) onFeedbackUpdate(feedback);
@@ -1426,7 +2069,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
   };
 
-  // Zoom Helpers - Wheel scrolling zooms in/out the page only
+  // Wheel Zoom / Pan
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
 
@@ -1488,7 +2131,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       );
       setShapes(updated);
       shapesRef.current = updated;
-      saveCanvasData(strokesRef.current, updated);
+      saveCanvasData(strokesRef.current, updated, imagesRef.current);
     } else {
       const newShape: ShapeElement = {
         id: `sh_${Date.now()}`,
@@ -1506,7 +2149,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const updated = [...shapesRef.current, newShape];
       setShapes(updated);
       shapesRef.current = updated;
-      saveCanvasData(strokesRef.current, updated);
+      saveCanvasData(strokesRef.current, updated, imagesRef.current);
     }
 
     setEditingTextElement(null);
@@ -1514,15 +2157,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   const currentSelectionBounds = getSelectionBounds();
 
-  // Custom Dot Cursor SVG Generator (Precise Dot Pointer instead of cross)
+  // Custom Cursor Style
   const dotCursorStyle = useMemo(() => {
     if (tool === 'cursor') return 'default';
     if (tool === 'eraser') {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="rgba(244,63,94,0.25)" stroke="%23f43f5e" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5" fill="%23f43f5e"/></svg>`;
       return `url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}') 10 10, pointer`;
     }
-    
-    // Dynamic Dot matching active ink color and stroke thickness
+
     const dotRadius = Math.max(3.5, Math.min(8, strokeWidth * 1.1));
     const size = Math.max(18, Math.ceil(dotRadius * 3));
     const center = Math.floor(size / 2);
@@ -1538,6 +2180,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       className="relative flex-1 h-full overflow-hidden select-none"
       style={{ backgroundColor: theme.editorBg, cursor: dotCursorStyle }}
       onWheel={handleWheel}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <canvas
         ref={canvasRef}
@@ -1549,8 +2194,43 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         className="w-full h-full block touch-none"
       />
 
-      {/* FLOATING SELECTION TRANSFORM TOOLBAR (Position & Angle Control) */}
-      {currentSelectionBounds && (
+      {/* DRAG & DROP OVERLAY BANNER */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-sky-500/20 backdrop-blur-xs border-2 border-dashed border-sky-400 z-50 flex flex-col items-center justify-center text-white pointer-events-none animate-in fade-in">
+          <ImageIcon size={48} className="text-sky-300 animate-bounce mb-2" />
+          <h3 className="text-base font-bold">Drop Image or PDF here</h3>
+          <p className="text-xs text-sky-200">PNG, JPG, SVG, WebP & PDF supported</p>
+        </div>
+      )}
+
+      {/* FLOATING IMAGE EDIT TOOLBAR */}
+      {selectedImage && (
+        <div
+          className="absolute z-40"
+          style={{
+            left: `${(selectedImage.x + selectedImage.width / 2) * zoom + panX}px`,
+            top: `${Math.max(16, selectedImage.y * zoom + panY - 60)}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <ImageEditToolbar
+            image={selectedImage}
+            onUpdateImage={handleUpdateImage}
+            onDeleteImage={deleteSelectedItems}
+            onDuplicateImage={handleDuplicateImage}
+            onBringForward={() => handleReorderImage('forward')}
+            onSendBackward={() => handleReorderImage('backward')}
+            currentTheme={currentTheme}
+            isCropping={isCropping}
+            onToggleCrop={handleToggleCrop}
+            onApplyCrop={handleApplyCrop}
+            onCancelCrop={handleCancelCrop}
+          />
+        </div>
+      )}
+
+      {/* FLOATING STROKES & SHAPES SELECTION TRANSFORM TOOLBAR */}
+      {currentSelectionBounds && !selectedImage && (
         <div
           className="absolute z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/95 border border-sky-400 text-white shadow-2xl backdrop-blur-md text-xs animate-fade-in"
           style={{
@@ -1563,7 +2243,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             {selectedStrokeIds.length + selectedShapeIds.length} Selected
           </span>
 
-          {/* Position Nudge Buttons */}
           <div className="flex items-center gap-0.5 bg-zinc-800 p-0.5 rounded border border-zinc-700">
             <button
               onClick={() => translateSelectedItems(-5, 0)}
@@ -1595,7 +2274,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             </button>
           </div>
 
-          {/* Angle Rotation Controls */}
           <div className="flex items-center gap-1 bg-zinc-800 p-0.5 rounded border border-zinc-700">
             <button
               onClick={() =>
@@ -1625,7 +2303,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             </button>
           </div>
 
-          {/* Beautify Selection */}
           {selectedStrokeIds.length > 0 && onBeautifySelection && (
             <button
               onClick={() => {
@@ -1638,7 +2315,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             </button>
           )}
 
-          {/* Delete Selection */}
           <button
             onClick={deleteSelectedItems}
             className="p-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white"
@@ -1663,7 +2339,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
             setZoom((z) => Math.max(minZ, z - 0.1));
           }}
           className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
-          title="Zoom Out (Stops at Perfect A4 Size)"
+          title="Zoom Out"
         >
           <ZoomOut size={15} />
         </button>
@@ -1671,7 +2347,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         <button
           onClick={centerAndFitPage}
           className="px-2 py-1 font-mono font-semibold text-sky-400 hover:text-sky-300 hover:bg-white/10 rounded cursor-pointer transition-all"
-          title="Click to Reset & Center A4 Page"
+          title="Click to Reset & Center Page"
         >
           {Math.round(zoom * 100)}%
         </button>
@@ -1687,13 +2363,50 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
 
         <button
+          onClick={fitFullScreenPage}
+          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-sky-300 transition-colors cursor-pointer"
+          title="Fit Full Screen (Maximize Canvas on Viewport)"
+        >
+          <Expand size={15} />
+        </button>
+
+        <button
+          onClick={fitWidthPage}
+          className="px-2 py-1 rounded hover:bg-white/20 text-gray-300 hover:text-white transition-all text-[11px] font-medium cursor-pointer"
+          title="Fit Page to Width"
+        >
+          Fit Width
+        </button>
+
+        <button
           onClick={centerAndFitPage}
           className="px-2.5 py-1 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 hover:text-white flex items-center gap-1.5 transition-all text-[11px] font-medium cursor-pointer border border-sky-500/40"
-          title="Center & Fit Perfect A4 Page on Screen"
+          title="Center & Fit Perfect Page on Screen"
         >
           <FileText size={14} />
-          Center Page
+          Center
         </button>
+
+        {onToggleZenMode && (
+          <>
+            <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
+            <button
+              onClick={onToggleZenMode}
+              className={`p-1.5 rounded transition-all cursor-pointer border ${
+                isZenMode
+                  ? 'bg-sky-500/40 text-sky-200 border-sky-400'
+                  : 'hover:bg-white/20 text-gray-300 hover:text-sky-300 border-transparent'
+              }`}
+              title={
+                isZenMode
+                  ? 'Exit Zen Maximize Mode'
+                  : 'Maximize Working Area (Zen Mode: Collapse Sidebars & Toolbars)'
+              }
+            >
+              {isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          </>
+        )}
       </div>
 
       {/* TEXT / STICKY NOTE EDITING OVERLAY MODAL */}

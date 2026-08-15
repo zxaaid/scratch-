@@ -1,17 +1,92 @@
 import jsPDF from 'jspdf';
-import { Page, Notebook, PDFItem, ThemeId } from '../types';
+import { Page, Notebook, PDFItem, ThemeId, ImageElement } from '../types';
+
+/**
+ * Helper to draw an image element onto a canvas context with transforms and filters
+ */
+export const drawImageElementToContext = (
+  ctx: CanvasRenderingContext2D,
+  imgElement: ImageElement,
+  imgObj?: HTMLImageElement
+) => {
+  if (!imgObj && !imgElement.src) return;
+
+  ctx.save();
+  ctx.globalAlpha = imgElement.opacity ?? 1.0;
+
+  const w = imgElement.width || 200;
+  const h = imgElement.height || 200;
+
+  // Apply transforms (Rotation & Translation)
+  ctx.translate(imgElement.x + w / 2, imgElement.y + h / 2);
+
+  if (imgElement.rotation) {
+    ctx.rotate((imgElement.rotation * Math.PI) / 180);
+  }
+
+  if (imgElement.flipH || imgElement.flipV) {
+    ctx.scale(imgElement.flipH ? -1 : 1, imgElement.flipV ? -1 : 1);
+  }
+
+  // Apply CSS-like canvas filters
+  const filters: string[] = [];
+  if (imgElement.brightness && imgElement.brightness !== 100) {
+    filters.push(`brightness(${imgElement.brightness}%)`);
+  }
+  if (imgElement.contrast && imgElement.contrast !== 100) {
+    filters.push(`contrast(${imgElement.contrast}%)`);
+  }
+  if (imgElement.saturation && imgElement.saturation !== 100) {
+    filters.push(`saturate(${imgElement.saturation}%)`);
+  }
+  if (imgElement.grayscale && imgElement.grayscale > 0) {
+    filters.push(`grayscale(${imgElement.grayscale}%)`);
+  }
+  if (imgElement.invert && imgElement.invert > 0) {
+    filters.push(`invert(${imgElement.invert}%)`);
+  }
+  if (imgElement.blur && imgElement.blur > 0) {
+    filters.push(`blur(${imgElement.blur}px)`);
+  }
+
+  if (filters.length > 0 && ctx.filter !== undefined) {
+    ctx.filter = filters.join(' ');
+  }
+
+  if (imgObj && imgObj.complete && imgObj.naturalWidth > 0) {
+    if (imgElement.crop) {
+      const sx = imgElement.crop.x * imgObj.naturalWidth;
+      const sy = imgElement.crop.y * imgObj.naturalHeight;
+      const sw = imgElement.crop.width * imgObj.naturalWidth;
+      const sh = imgElement.crop.height * imgObj.naturalHeight;
+      ctx.drawImage(imgObj, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.drawImage(imgObj, -w / 2, -h / 2, w, h);
+    }
+  }
+
+  ctx.restore();
+};
 
 /**
  * Renders an exact high-resolution visual copy of a Page onto an HTML Canvas
  */
 export const renderPageToCanvas = (
   page: Page,
-  _currentTheme: ThemeId = 'vscode-dark'
+  _currentTheme: ThemeId = 'vscode-dark',
+  loadedImagesMap?: Map<string, HTMLImageElement>
 ): HTMLCanvasElement => {
   const isDarkTemplate = page.template === 'dark-ruled' || page.template === 'dark-grid';
 
   let maxX = 794;
   let maxY = 1123;
+
+  if (page.images && page.images.length > 0) {
+    page.images.forEach((img) => {
+      if (img.x + img.width > maxX) maxX = img.x + img.width;
+      if (img.y + img.height > maxY) maxY = img.y + img.height;
+    });
+  }
 
   if (page.strokes && page.strokes.length > 0) {
     page.strokes.forEach((s) => {
@@ -95,6 +170,16 @@ export const renderPageToCanvas = (
     }
   }
   ctx.restore();
+
+  // 3. Draw Images (Layer 3 - under strokes and shapes)
+  if (page.images && page.images.length > 0) {
+    page.images.forEach((imgElement) => {
+      const imgObj = loadedImagesMap?.get(imgElement.id);
+      if (imgObj) {
+        drawImageElementToContext(ctx, imgElement, imgObj);
+      }
+    });
+  }
 
   // 3. Draw Shapes, Text Boxes & Sticky Notes
   if (page.shapes && page.shapes.length > 0) {

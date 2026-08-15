@@ -13,6 +13,7 @@ import {
   PenPreset,
   Stroke,
   ShapeElement,
+  ImageElement,
   Page,
   PDFItem,
   CommandPaletteAction,
@@ -253,6 +254,7 @@ export default function App() {
   const [handwritingMode, setHandwritingMode] = useState<HandwritingMode>(1);
   const [defaultTemplate, setDefaultTemplate] = useState<PageTemplate>('ruled');
   const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('a4-landscape');
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [penPresets, setPenPresets] = useState<PenPreset[]>(INITIAL_PEN_PRESETS);
   const [tabletSettings, setTabletSettings] = useState<TabletSettings>(INITIAL_TABLET_SETTINGS);
 
@@ -449,8 +451,8 @@ export default function App() {
   }>({ title: '', original: '', aiResult: '', actionType: '' });
 
   // History Stack for Undo / Redo
-  const [undoStack, setUndoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[] }[]>([]);
-  const [redoStack, setRedoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[] }[]>([]);
+  const [undoStack, setUndoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[]; images?: ImageElement[] }[]>([]);
+  const [redoStack, setRedoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[]; images?: ImageElement[] }[]>([]);
 
   // Get Current Active Page or PDF
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -517,6 +519,7 @@ export default function App() {
       template: defaultTemplate,
       strokes: [],
       shapes: [],
+      images: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -531,14 +534,22 @@ export default function App() {
     handleSelectPage(targetNb.id, newPage.id);
   };
 
-  // Canvas Stroke Updates
+  // Canvas Stroke & Image Updates
   const handleUpdatePageStrokes = (
     pageId: string,
     newStrokes: Stroke[],
-    newShapes: ShapeElement[]
+    newShapes: ShapeElement[],
+    newImages?: ImageElement[]
   ) => {
     if (activePage) {
-      setUndoStack((prev) => [...prev, { strokes: activePage.strokes, shapes: activePage.shapes }]);
+      setUndoStack((prev) => [
+        ...prev,
+        {
+          strokes: activePage.strokes || [],
+          shapes: activePage.shapes || [],
+          images: activePage.images || [],
+        },
+      ]);
       setRedoStack([]);
     }
 
@@ -548,7 +559,13 @@ export default function App() {
         ...nb,
         pages: nb.pages.map((pg) =>
           pg.id === pageId
-            ? { ...pg, strokes: newStrokes, shapes: newShapes, updatedAt: new Date().toISOString() }
+            ? {
+                ...pg,
+                strokes: newStrokes,
+                shapes: newShapes,
+                images: newImages !== undefined ? newImages : pg.images,
+                updatedAt: new Date().toISOString(),
+              }
             : pg
         ),
       })),
@@ -559,7 +576,8 @@ export default function App() {
     pdfId: string,
     pageNum: number,
     newStrokes: Stroke[],
-    newShapes: ShapeElement[]
+    newShapes: ShapeElement[],
+    newImages?: ImageElement[]
   ) => {
     setWorkspace((prev) => ({
       ...prev,
@@ -569,7 +587,12 @@ export default function App() {
               ...pdf,
               annotations: {
                 ...pdf.annotations,
-                [pageNum]: { pageNumber: pageNum, strokes: newStrokes, shapes: newShapes },
+                [pageNum]: {
+                  pageNumber: pageNum,
+                  strokes: newStrokes,
+                  shapes: newShapes,
+                  images: newImages !== undefined ? newImages : pdf.annotations?.[pageNum]?.images,
+                },
               },
             }
           : pdf
@@ -577,29 +600,100 @@ export default function App() {
     }));
   };
 
+  // Insert Image or PDF from File input directly
+  const handleInsertMedia = (file: File) => {
+    if (!activePage && !activePdf) {
+      alert('Please open or create a page first to insert media.');
+      return;
+    }
+
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result && typeof e.target.result === 'string') {
+          const dataUrl = e.target.result;
+          const img = new Image();
+          img.onload = () => {
+            const natW = img.naturalWidth || 600;
+            const natH = img.naturalHeight || 400;
+            const displayW = Math.min(450, natW);
+            const displayH = Math.round((displayW / natW) * natH);
+
+            const newImage: ImageElement = {
+              id: `img_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              src: dataUrl,
+              name: file.name,
+              x: 80,
+              y: 80,
+              width: displayW,
+              height: displayH,
+              naturalWidth: natW,
+              naturalHeight: natH,
+              opacity: 1,
+              rotation: 0,
+              brightness: 100,
+              contrast: 100,
+              saturation: 100,
+              grayscale: 0,
+              invert: 0,
+              blur: 0,
+              sourceType: 'image',
+            };
+
+            if (activePage) {
+              const currentImages = activePage.images || [];
+              handleUpdatePageStrokes(activePage.id, activePage.strokes, activePage.shapes, [
+                ...currentImages,
+                newImage,
+              ]);
+            }
+          };
+          img.src = dataUrl;
+        }
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      handleUploadPdf(file);
+    }
+  };
+
   // Undo / Redo Actions
   const handleUndo = () => {
     if (undoStack.length === 0 || !activePage) return;
     const last = undoStack[undoStack.length - 1];
-    setRedoStack((prev) => [...prev, { strokes: activePage.strokes, shapes: activePage.shapes }]);
+    setRedoStack((prev) => [
+      ...prev,
+      {
+        strokes: activePage.strokes || [],
+        shapes: activePage.shapes || [],
+        images: activePage.images || [],
+      },
+    ]);
     setUndoStack((prev) => prev.slice(0, -1));
 
-    handleUpdatePageStrokes(activePage.id, last.strokes, last.shapes);
+    handleUpdatePageStrokes(activePage.id, last.strokes, last.shapes, last.images);
   };
 
   const handleRedo = () => {
     if (redoStack.length === 0 || !activePage) return;
     const next = redoStack[redoStack.length - 1];
-    setUndoStack((prev) => [...prev, { strokes: activePage.strokes, shapes: activePage.shapes }]);
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        strokes: activePage.strokes || [],
+        shapes: activePage.shapes || [],
+        images: activePage.images || [],
+      },
+    ]);
     setRedoStack((prev) => prev.slice(0, -1));
 
-    handleUpdatePageStrokes(activePage.id, next.strokes, next.shapes);
+    handleUpdatePageStrokes(activePage.id, next.strokes, next.shapes, next.images);
   };
 
   const handleClearCanvas = () => {
-    if (!confirm('Clear all strokes and shapes on this page?')) return;
+    if (!confirm('Clear all strokes, shapes, and images on this page?')) return;
     if (activePage) {
-      handleUpdatePageStrokes(activePage.id, [], []);
+      handleUpdatePageStrokes(activePage.id, [], [], []);
     }
   };
 
@@ -830,9 +924,30 @@ export default function App() {
     { id: 'act_sync_fs', title: 'Sync & Save Now to Local Folder', category: 'Local Storage', shortcut: 'Ctrl+S', run: handleSyncLocalDirectory },
     { id: 'act_unlink_fs', title: 'Unlink Local Folder', category: 'Local Storage', run: handleDisconnectLocalDirectory },
     { id: 'act_new_page', title: 'New Blank Notebook Page', category: 'Notebook', shortcut: 'Ctrl+N', run: handleNewBlankPage },
+    {
+      id: 'act_insert_media',
+      title: 'Insert Image or PDF to Canvas (PNG, JPG, SVG, PDF)',
+      category: 'Media & Images',
+      run: () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*,.pdf';
+        input.onchange = (e: any) => {
+          if (e.target.files?.[0]) handleInsertMedia(e.target.files[0]);
+        };
+        input.click();
+      },
+    },
     { id: 'act_beautify', title: 'Beautify Current Page (AI)', category: 'AI', run: () => handleRunAiAction('beautify') },
     { id: 'act_ocr', title: 'Run OCR to Markdown', category: 'AI', run: () => handleRunAiAction('ocr') },
     { id: 'act_summarize', title: 'Summarize Note', category: 'AI', run: () => handleRunAiAction('summarize') },
+    { id: 'act_zen_mode', title: 'Zen Mode: Maximize Working Area (F11)', category: 'Workspace', shortcut: 'F11', run: () => setIsZenMode((z) => !z) },
+    { id: 'act_fit_fullscreen', title: 'Workspace: Fit Edge-to-Edge Full Screen', category: 'Workspace', run: () => setPageAspectRatio('flexible') },
+    { id: 'act_infinite_canvas', title: 'Workspace: Infinite Expansive Canvas', category: 'Workspace', run: () => setPageAspectRatio('infinite') },
+    { id: 'act_4k_canvas', title: 'Workspace: 4K Ultra Canvas (3840x2160)', category: 'Workspace', run: () => setPageAspectRatio('4k-canvas') },
+    { id: 'act_ultrawide_canvas', title: 'Workspace: 21:9 Ultra-Wide Canvas', category: 'Workspace', run: () => setPageAspectRatio('ultrawide') },
+    { id: 'act_a4_landscape', title: 'Workspace: A4 Landscape', category: 'Workspace', run: () => setPageAspectRatio('a4-landscape') },
+    { id: 'act_a4_portrait', title: 'Workspace: A4 Portrait', category: 'Workspace', run: () => setPageAspectRatio('a4-portrait') },
     { id: 'act_export_pdf', title: 'Sync / Save PDF Notes to Local Folder', category: 'Storage', shortcut: 'Ctrl+Shift+S', run: handleExportPdf },
     { id: 'act_mode1', title: 'Set Mode 1: Pure Curve Smoothing', category: 'Handwriting Engine', run: () => setHandwritingMode(1) },
     { id: 'act_mode2', title: 'Set Mode 2: Style Beautification', category: 'Handwriting Engine', run: () => setHandwritingMode(2) },
@@ -848,6 +963,23 @@ export default function App() {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle Zen Mode / Maximize Workspace (F11)
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsZenMode((prev) => !prev);
+        return;
+      }
+      // Toggle Sidebar (Ctrl+B / Cmd+B)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        handleToggleSidebar();
+        return;
+      }
+      // Escape to exit Zen Mode
+      if (e.key === 'Escape' && isZenMode && !isCommandPaletteOpen && !aiModalOpen) {
+        setIsZenMode(false);
+        return;
+      }
       // Save to Local Device (Ctrl+S)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
@@ -884,37 +1016,39 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activePage, undoStack, redoStack]);
+  }, [activePage, undoStack, redoStack, isZenMode, isCommandPaletteOpen, aiModalOpen, localFsState.dirHandle]);
 
   const theme = THEMES[currentTheme];
 
   return (
     <div
-      className="w-screen h-screen flex flex-col overflow-hidden font-sans select-none"
+      className="w-screen h-screen flex flex-col overflow-hidden font-sans select-none relative"
       style={{
         backgroundColor: theme.editorBg,
         color: theme.editorFg,
       }}
     >
       {/* Main Body: ActivityBar + Sidebar + Editor Area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Activity Bar */}
-        <ActivityBar
-          activeTab={activeActivityTab}
-          setActiveTab={(tab) => {
-            setActiveActivityTab(tab);
-            setIsSidebarOpen(true);
-          }}
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={handleToggleSidebar}
-          currentTheme={currentTheme}
-          setTheme={setTheme}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-          tabletConnected={tabletConnected}
-        />
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Activity Bar (Hidden in Zen Mode to Maximize Working Area) */}
+        {!isZenMode && (
+          <ActivityBar
+            activeTab={activeActivityTab}
+            setActiveTab={(tab) => {
+              setActiveActivityTab(tab);
+              setIsSidebarOpen(true);
+            }}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={handleToggleSidebar}
+            currentTheme={currentTheme}
+            setTheme={setTheme}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            tabletConnected={tabletConnected}
+          />
+        )}
 
-        {/* Collapsible & Shrinkable Sidebar Panel */}
-        {isSidebarOpen && (
+        {/* Collapsible & Shrinkable Sidebar Panel (Hidden in Zen Mode) */}
+        {!isZenMode && isSidebarOpen && (
           <div
             className={`h-full flex shrink-0 relative ${isDraggingSidebar ? '' : 'transition-all duration-150'}`}
             style={{ width: sidebarWidth }}
@@ -1034,6 +1168,9 @@ export default function App() {
             canUndo={undoStack.length > 0}
             canRedo={redoStack.length > 0}
             currentTheme={currentTheme}
+            onInsertMedia={handleInsertMedia}
+            isZenMode={isZenMode}
+            onToggleZenMode={() => setIsZenMode(!isZenMode)}
           />
 
           {/* Canvas Viewport Workspace */}
@@ -1056,6 +1193,8 @@ export default function App() {
             onUpdateTabletPressure={(p) => setTabletPressure(p)}
             pageAspectRatio={pageAspectRatio}
             onSetPageAspectRatio={setPageAspectRatio}
+            isZenMode={isZenMode}
+            onToggleZenMode={() => setIsZenMode(!isZenMode)}
           />
 
           {/* Bottom Page Control Toolbar (Outside Working Area Canvas) */}
@@ -1070,6 +1209,8 @@ export default function App() {
             activePageTitle={activePage?.title}
             activePage={activePage}
             activeNotebook={activeNotebook}
+            isZenMode={isZenMode}
+            onToggleZenMode={() => setIsZenMode(!isZenMode)}
           />
         </div>
       </div>

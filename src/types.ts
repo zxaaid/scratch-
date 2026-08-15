@@ -26,6 +26,9 @@ export type HandwritingMode = 1 | 2 | 3; // 1: Smoothing only, 2: Beautify style
 
 export type PageAspectRatio =
   | 'flexible'
+  | 'infinite'
+  | '4k-canvas'
+  | 'ultrawide'
   | 'a4-portrait'
   | 'a4-landscape'
   | 'letter'
@@ -96,12 +99,47 @@ export interface ShapeElement {
   rotation?: number;
 }
 
+export interface ImageCrop {
+  x: number; // percentage 0-1
+  y: number; // percentage 0-1
+  width: number; // percentage 0-1
+  height: number; // percentage 0-1
+}
+
+export interface ImageElement {
+  id: string;
+  src: string; // Base64 data URL or Object URL
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  naturalWidth?: number;
+  naturalHeight?: number;
+  opacity?: number; // 0 to 1, default 1
+  rotation?: number; // degrees 0-360
+  brightness?: number; // % (default 100)
+  contrast?: number; // % (default 100)
+  saturation?: number; // % (default 100)
+  grayscale?: number; // % (0-100, default 0)
+  invert?: number; // % (0-100, default 0)
+  blur?: number; // px (default 0)
+  flipH?: boolean;
+  flipV?: boolean;
+  locked?: boolean;
+  name?: string;
+  sourceType?: 'image' | 'pdf-page' | 'clipboard' | 'camera';
+  crop?: ImageCrop;
+  isSelected?: boolean;
+  zIndex?: number;
+}
+
 export interface Page {
   id: string;
   title: string;
   template: PageTemplate;
   strokes: Stroke[];
   shapes: ShapeElement[];
+  images?: ImageElement[];
   createdAt: string;
   updatedAt: string;
   isInfinite?: boolean;
@@ -136,6 +174,7 @@ export interface PDFAnnotationPage {
   pageNumber: number;
   strokes: Stroke[];
   shapes: ShapeElement[];
+  images?: ImageElement[];
 }
 
 export interface PDFItem {
