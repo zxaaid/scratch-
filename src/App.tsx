@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import jsPDF from 'jspdf';
 import {
   Workspace,
   TabItem,
@@ -28,7 +27,6 @@ import { ExplorerPanel } from './components/ExplorerPanel';
 import { PracticePanel } from './components/PracticePanel';
 import { PdfPanel } from './components/PdfPanel';
 import { SearchPanel } from './components/SearchPanel';
-import { AiPanel } from './components/AiPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TabBar } from './components/TabBar';
 import { PenToolbar } from './components/PenToolbar';
@@ -36,9 +34,7 @@ import { CanvasEditor } from './components/CanvasEditor';
 import { BottomPageToolbar } from './components/BottomPageToolbar';
 import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
-import { AiDiffModal } from './components/AiDiffModal';
 import { THEMES } from './lib/themes';
-import { convertToElegantScript } from './lib/handwritingEngine';
 import {
   LocalFileSystemState,
   pickLocalDirectory,
@@ -439,17 +435,6 @@ export default function App() {
   // Command Palette State
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
 
-  // AI Modal State
-  const [isLoadingAi, setIsLoadingAi] = useState<boolean>(false);
-  const [aiStatusText, setAiStatusText] = useState<string>('');
-  const [aiModalOpen, setAiModalOpen] = useState<boolean>(false);
-  const [aiModalData, setAiModalData] = useState<{
-    title: string;
-    original: string;
-    aiResult: string;
-    actionType: string;
-  }>({ title: '', original: '', aiResult: '', actionType: '' });
-
   // History Stack for Undo / Redo
   const [undoStack, setUndoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[]; images?: ImageElement[] }[]>([]);
   const [redoStack, setRedoStack] = useState<{ strokes: Stroke[]; shapes: ShapeElement[]; images?: ImageElement[] }[]>([]);
@@ -759,163 +744,6 @@ export default function App() {
     }
   };
 
-  // AI Service Endpoints Caller
-  const handleRunAiAction = async (
-    actionType: 'beautify' | 'ocr' | 'summarize' | 'equation' | 'translate'
-  ) => {
-    if (!activePage && !activePdf) {
-      alert('Please select an active notebook page or PDF to run AI features.');
-      return;
-    }
-
-    setIsLoadingAi(true);
-    setAiStatusText('Capturing canvas handwriting image...');
-
-    try {
-      // Create a snapshot canvas of current strokes
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 1200;
-      tempCanvas.height = 900;
-      const ctx = tempCanvas.getContext('2d');
-      if (ctx && activePage) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, 1200, 900);
-        activePage.strokes.forEach((st) => {
-          ctx.strokeStyle = st.color;
-          ctx.lineWidth = st.width;
-          ctx.beginPath();
-          st.points.forEach((p, idx) => {
-            if (idx === 0) ctx.moveTo(p.x, p.y);
-            else ctx.lineTo(p.x, p.y);
-          });
-          ctx.stroke();
-        });
-      }
-
-      const imageBase64 = tempCanvas.toDataURL('image/png');
-
-      if (actionType === 'ocr') {
-        setAiStatusText('Running Gemini AI OCR Vision Model...');
-        const res = await fetch('/api/ai/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64 }),
-        });
-        const data = await res.json();
-
-        setAiModalData({
-          title: 'Handwriting OCR Transcription',
-          original: `Strokes on page: ${activePage?.strokes.length || 0}`,
-          aiResult: data.text || 'No text detected.',
-          actionType: 'ocr',
-        });
-        setAiModalOpen(true);
-      } else if (actionType === 'beautify') {
-        setAiStatusText('Beautifying handwriting strokes & structure...');
-        const res = await fetch('/api/ai/beautify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64, mode: 'script' }),
-        });
-        const data = await res.json();
-
-        setAiModalData({
-          title: 'AI Handwriting Beautification',
-          original: `Messy strokes count: ${activePage?.strokes.length || 0}`,
-          aiResult: `Transcribed & Cleaned Transcript:\n\n${data.transcript || 'Handwritten lines aligned.'}\n\nSuggestions:\n- ${
-            (data.suggestions || []).join('\n- ') || 'Great handwriting flow!'
-          }`,
-          actionType: 'beautify',
-        });
-        setAiModalOpen(true);
-      } else if (actionType === 'summarize') {
-        setAiStatusText('Summarizing handwritten notes...');
-        const res = await fetch('/api/ai/summarize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64, text: activePage?.ocrText }),
-        });
-        const data = await res.json();
-
-        setAiModalData({
-          title: 'AI Note Summary',
-          original: activePage?.ocrText || 'Handwritten canvas strokes',
-          aiResult: `Summary: ${data.summary || 'Summary generated.'}\n\nKey Takeaways:\n• ${
-            (data.keyPoints || []).join('\n• ')
-          }`,
-          actionType: 'summarize',
-        });
-        setAiModalOpen(true);
-      } else if (actionType === 'equation') {
-        setAiStatusText('Parsing math equations & LaTeX...');
-        const res = await fetch('/api/ai/equation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64 }),
-        });
-        const data = await res.json();
-
-        setAiModalData({
-          title: 'Math Equation Recognition',
-          original: 'Handwritten math equation',
-          aiResult: `LaTeX Formula:\n${data.latex || '$E = mc^2$'}\n\nExplanation:\n${
-            data.explanation || 'Analyzed formula variables.'
-          }`,
-          actionType: 'equation',
-        });
-        setAiModalOpen(true);
-      } else if (actionType === 'translate') {
-        setAiStatusText('Translating notes...');
-        const res = await fetch('/api/ai/translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: activePage?.ocrText || 'Hello world notes' }),
-        });
-        const data = await res.json();
-
-        setAiModalData({
-          title: 'Translated Handwriting',
-          original: activePage?.ocrText || 'Original text',
-          aiResult: data.translation || 'Translation complete.',
-          actionType: 'translate',
-        });
-        setAiModalOpen(true);
-      }
-    } catch (err: any) {
-      console.error('AI Action Failed:', err);
-      alert(`AI Feature Error: ${err.message || 'Failed to communicate with backend'}`);
-    } finally {
-      setIsLoadingAi(false);
-      setAiStatusText('');
-    }
-  };
-
-  // Apply AI Modal Outcome to Page
-  const handleApplyAiTransformation = () => {
-    if (!activePage) return;
-
-    if (aiModalData.actionType === 'ocr' || aiModalData.actionType === 'summarize') {
-      setWorkspace((prev) => ({
-        ...prev,
-        notebooks: prev.notebooks.map((nb) => ({
-          ...nb,
-          pages: nb.pages.map((p) =>
-            p.id === activePage.id ? { ...p, ocrText: aiModalData.aiResult } : p
-          ),
-        })),
-      }));
-    } else if (aiModalData.actionType === 'beautify') {
-      // Beautify mode: Convert page strokes to mode 3 script strokes
-      const beautifiedStrokes = activePage.strokes.map((st) => ({
-        ...st,
-        points: convertToElegantScript(st),
-        isBeautified: true,
-      }));
-
-      handleUpdatePageStrokes(activePage.id, beautifiedStrokes, activePage.shapes);
-    }
-  };
-
   // Command Palette Actions Definitions
   const commandPaletteActions: CommandPaletteAction[] = [
     { id: 'act_link_fs', title: 'Link Local PC/Tablet Folder (Direct Disk Save)', category: 'Local Storage', shortcut: 'Ctrl+Shift+L', run: handleConnectLocalDirectory },
@@ -945,9 +773,6 @@ export default function App() {
     { id: 'act_tool_eraser', title: 'Tool: Eraser (E)', category: 'Tools', shortcut: 'E', run: () => setCurrentTool('eraser') },
     { id: 'act_tool_lasso', title: 'Tool: Lasso Selection (L)', category: 'Tools', shortcut: 'L', run: () => setCurrentTool('lasso') },
     { id: 'act_tool_highlighter', title: 'Tool: Highlighter', category: 'Tools', run: () => setCurrentTool('highlighter') },
-    { id: 'act_beautify', title: 'Beautify Current Page (AI)', category: 'AI', run: () => handleRunAiAction('beautify') },
-    { id: 'act_ocr', title: 'Run OCR to Markdown', category: 'AI', run: () => handleRunAiAction('ocr') },
-    { id: 'act_summarize', title: 'Summarize Note', category: 'AI', run: () => handleRunAiAction('summarize') },
     { id: 'act_zen_mode', title: 'Zen Mode: Maximize Working Area (F11)', category: 'Workspace', shortcut: 'F11', run: () => setIsZenMode((z) => !z) },
     { id: 'act_fit_fullscreen', title: 'Workspace: Fit Edge-to-Edge Full Screen', category: 'Workspace', run: () => setPageAspectRatio('flexible') },
     { id: 'act_infinite_canvas', title: 'Workspace: Infinite Expansive Canvas', category: 'Workspace', run: () => setPageAspectRatio('infinite') },
@@ -983,7 +808,7 @@ export default function App() {
         return;
       }
       // Escape to exit Zen Mode
-      if (e.key === 'Escape' && isZenMode && !isCommandPaletteOpen && !aiModalOpen) {
+      if (e.key === 'Escape' && isZenMode && !isCommandPaletteOpen) {
         setIsZenMode(false);
         return;
       }
@@ -1022,7 +847,7 @@ export default function App() {
       }
 
       // Single Key Tool Selection (when not typing in an input/textarea)
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && !isCommandPaletteOpen && !aiModalOpen) {
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !isCommandPaletteOpen) {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target as HTMLElement)?.isContentEditable) {
           const key = e.key.toLowerCase();
@@ -1043,7 +868,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activePage, undoStack, redoStack, isZenMode, isCommandPaletteOpen, aiModalOpen, localFsState.dirHandle]);
+  }, [activePage, undoStack, redoStack, isZenMode, isCommandPaletteOpen, localFsState.dirHandle]);
 
   const theme = THEMES[currentTheme];
 
@@ -1122,16 +947,6 @@ export default function App() {
               <SearchPanel
                 workspace={workspace}
                 onSelectPage={handleSelectPage}
-                currentTheme={currentTheme}
-              />
-            )}
-            {activeActivityTab === 'ai' && (
-              <AiPanel
-                handwritingMode={handwritingMode}
-                setHandwritingMode={setHandwritingMode}
-                onRunAiAction={handleRunAiAction}
-                isLoadingAi={isLoadingAi}
-                aiStatusText={aiStatusText}
                 currentTheme={currentTheme}
               />
             )}
@@ -1259,17 +1074,6 @@ export default function App() {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         actions={commandPaletteActions}
-        currentTheme={currentTheme}
-      />
-
-      {/* AI Diff Preview Modal */}
-      <AiDiffModal
-        isOpen={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
-        onApply={handleApplyAiTransformation}
-        title={aiModalData.title}
-        originalContent={aiModalData.original}
-        aiOutputContent={aiModalData.aiResult}
         currentTheme={currentTheme}
       />
     </div>

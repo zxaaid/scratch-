@@ -4,7 +4,6 @@ import {
   FileText,
   Search,
   BookOpen,
-  Sparkles,
   Settings,
   Sun,
   Moon,
@@ -42,7 +41,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     { id: 'practice', label: 'Practice & Feedback', icon: <BookOpen size={22} /> },
     { id: 'pdfs', label: 'PDF Documents', icon: <FileText size={22} /> },
     { id: 'search', label: 'Search (Ctrl+F)', icon: <Search size={22} /> },
-    { id: 'ai', label: 'AI Handwriting Engine', icon: <Sparkles size={22} /> },
     { id: 'settings', label: 'Settings & Tablet', icon: <Settings size={22} /> },
   ];
 

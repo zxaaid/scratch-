@@ -147,10 +147,6 @@ export interface Page {
   tags?: string[];
   ocrText?: string;
   isFavorite?: boolean;
-  aiBeautifiedVersion?: {
-    strokes: Stroke[];
-    transcript: string;
-  };
 }
 
 export interface Notebook {
@@ -254,7 +250,7 @@ export interface TabItem {
   isDirty?: boolean;
 }
 
-export type ActivityTab = 'explorer' | 'pdfs' | 'search' | 'ai' | 'settings' | 'practice';
+export type ActivityTab = 'explorer' | 'pdfs' | 'search' | 'settings' | 'practice';
 
 export interface CommandPaletteAction {
   id: string;
