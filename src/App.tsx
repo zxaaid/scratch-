@@ -543,7 +543,7 @@ export default function App() {
   ) => {
     if (activePage) {
       setUndoStack((prev) => [
-        ...prev,
+        ...prev.slice(-49),
         {
           strokes: activePage.strokes || [],
           shapes: activePage.shapes || [],

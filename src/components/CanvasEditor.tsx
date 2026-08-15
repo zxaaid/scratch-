@@ -180,6 +180,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Spacebar Hand Panning State
   const [isSpacebarDown, setIsSpacebarDown] = useState<boolean>(false);
+  const [isDraggingActive, setIsDraggingActive] = useState<boolean>(false);
 
   // Box Selection Drag Ref (for cursor box drag)
   const isBoxSelectingRef = useRef<boolean>(false);
@@ -255,7 +256,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       shapesRef.current = initialShapes;
       imagesRef.current = initialImages;
     }
-  }, [page, pdf, pdfPageNum]);
+  }, [page?.id, page?.updatedAt, pdf?.id, pdfPageNum]);
 
   // Load & Render PDF Page via PDF.js when in PDF mode
   useEffect(() => {
@@ -396,40 +397,37 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const strokeIdSet = new Set(selectedStrokeIds);
       const shapeIdSet = new Set(selectedShapeIds);
 
-      const updatedStrokes = strokesRef.current.map((st) => {
-        if (strokeIdSet.has(st.id)) {
-          const newPts = st.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
-          const newSmoothed = st.smoothedPoints?.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
-          return { ...st, points: newPts, smoothedPoints: newSmoothed };
-        }
-        return st;
-      });
+      if (strokeIdSet.size > 0) {
+        strokesRef.current = strokesRef.current.map((st) => {
+          if (strokeIdSet.has(st.id)) {
+            const newPts = st.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+            const newSmoothed = st.smoothedPoints?.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+            return { ...st, points: newPts, smoothedPoints: newSmoothed };
+          }
+          return st;
+        });
+      }
 
-      const updatedShapes = shapesRef.current.map((sh) => {
-        if (shapeIdSet.has(sh.id)) {
-          const newPts = sh.points?.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
-          return { ...sh, x: sh.x + dx, y: sh.y + dy, points: newPts };
-        }
-        return sh;
-      });
+      if (shapeIdSet.size > 0) {
+        shapesRef.current = shapesRef.current.map((sh) => {
+          if (shapeIdSet.has(sh.id)) {
+            const newPts = sh.points?.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+            return { ...sh, x: sh.x + dx, y: sh.y + dy, points: newPts };
+          }
+          return sh;
+        });
+      }
 
-      const updatedImages = imagesRef.current.map((img) => {
-        if (img.id === selectedImageId && !img.locked) {
-          return { ...img, x: img.x + dx, y: img.y + dy };
-        }
-        return img;
-      });
-
-      setStrokes(updatedStrokes);
-      strokesRef.current = updatedStrokes;
-      setShapes(updatedShapes);
-      shapesRef.current = updatedShapes;
-      setImages(updatedImages);
-      imagesRef.current = updatedImages;
-
-      saveCanvasData(updatedStrokes, updatedShapes, updatedImages);
+      if (selectedImageId) {
+        imagesRef.current = imagesRef.current.map((img) => {
+          if (img.id === selectedImageId && !img.locked) {
+            return { ...img, x: img.x + dx, y: img.y + dy };
+          }
+          return img;
+        });
+      }
     },
-    [selectedStrokeIds, selectedShapeIds, selectedImageId, saveCanvasData]
+    [selectedStrokeIds, selectedShapeIds, selectedImageId]
   );
 
   // Rotate Selected Items by dAngleRad around center (cx, cy)
@@ -448,46 +446,43 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return { ...p, x: rx, y: ry };
       };
 
-      const updatedStrokes = strokesRef.current.map((st) => {
-        if (strokeIdSet.has(st.id)) {
-          const newPts = st.points.map(rotatePoint);
-          const newSmoothed = st.smoothedPoints?.map(rotatePoint);
-          return { ...st, points: newPts, smoothedPoints: newSmoothed };
-        }
-        return st;
-      });
+      if (strokeIdSet.size > 0) {
+        strokesRef.current = strokesRef.current.map((st) => {
+          if (strokeIdSet.has(st.id)) {
+            const newPts = st.points.map(rotatePoint);
+            const newSmoothed = st.smoothedPoints?.map(rotatePoint);
+            return { ...st, points: newPts, smoothedPoints: newSmoothed };
+          }
+          return st;
+        });
+      }
 
       const dAngleDeg = (dAngleRad * 180) / Math.PI;
 
-      const updatedShapes = shapesRef.current.map((sh) => {
-        if (shapeIdSet.has(sh.id)) {
-          const rx = cx + (sh.x - cx) * cos - (sh.y - cy) * sin;
-          const ry = cy + (sh.x - cx) * sin + (sh.y - cy) * cos;
-          const newPts = sh.points?.map(rotatePoint);
-          const newRot = ((sh.rotation || 0) + dAngleDeg) % 360;
-          return { ...sh, x: rx, y: ry, rotation: newRot, points: newPts };
-        }
-        return sh;
-      });
+      if (shapeIdSet.size > 0) {
+        shapesRef.current = shapesRef.current.map((sh) => {
+          if (shapeIdSet.has(sh.id)) {
+            const rx = cx + (sh.x - cx) * cos - (sh.y - cy) * sin;
+            const ry = cy + (sh.x - cx) * sin + (sh.y - cy) * cos;
+            const newPts = sh.points?.map(rotatePoint);
+            const newRot = ((sh.rotation || 0) + dAngleDeg) % 360;
+            return { ...sh, x: rx, y: ry, rotation: newRot, points: newPts };
+          }
+          return sh;
+        });
+      }
 
-      const updatedImages = imagesRef.current.map((img) => {
-        if (img.id === selectedImageId && !img.locked) {
-          const newRot = ((img.rotation || 0) + dAngleDeg + 360) % 360;
-          return { ...img, rotation: newRot };
-        }
-        return img;
-      });
-
-      setStrokes(updatedStrokes);
-      strokesRef.current = updatedStrokes;
-      setShapes(updatedShapes);
-      shapesRef.current = updatedShapes;
-      setImages(updatedImages);
-      imagesRef.current = updatedImages;
-
-      saveCanvasData(updatedStrokes, updatedShapes, updatedImages);
+      if (selectedImageId) {
+        imagesRef.current = imagesRef.current.map((img) => {
+          if (img.id === selectedImageId && !img.locked) {
+            const newRot = ((img.rotation || 0) + dAngleDeg + 360) % 360;
+            return { ...img, rotation: newRot };
+          }
+          return img;
+        });
+      }
     },
-    [selectedStrokeIds, selectedShapeIds, selectedImageId, saveCanvasData]
+    [selectedStrokeIds, selectedShapeIds, selectedImageId]
   );
 
   // Delete Selected Items
@@ -1013,6 +1008,8 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const h = imgElement.height;
 
     ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.globalAlpha = imgElement.opacity ?? 1.0;
 
     // Apply Transformation (Translation, Rotation, Flip)
@@ -1552,8 +1549,13 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Pointer Down Handler
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+
     if (isSpacebarDown || e.button === 1 || (e.button === 0 && e.altKey)) {
       setIsPanning(true);
+      setIsDraggingActive(true);
       setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
       return;
     }
@@ -1582,6 +1584,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const rotY = -h / 2 - 24 / zoom;
       if (!isCropping && Math.hypot(localX - 0, localY - rotY) <= hitRadius) {
         isRotatingRef.current = true;
+        setIsDraggingActive(true);
         activeImageStartRef.current = { ...img };
         lastAngleRadRef.current = Math.atan2(point.y - cy, point.x - cx);
         return;
@@ -1603,6 +1606,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         for (const hm of handleMap) {
           if (Math.hypot(localX - hm.x, localY - hm.y) <= hitRadius) {
             activeHandleRef.current = hm.type;
+            setIsDraggingActive(true);
             activeImageStartRef.current = { ...img };
             lastPointerRef.current = { x: point.x, y: point.y };
             return;
@@ -1619,6 +1623,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         localY <= h / 2
       ) {
         isTranslatingRef.current = true;
+        setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
         return;
       }
@@ -1631,6 +1636,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const hitRadius = 12 / zoom;
       if (Math.hypot(point.x - bounds.cx, point.y - knobY) <= hitRadius) {
         isRotatingRef.current = true;
+        setIsDraggingActive(true);
         lastAngleRadRef.current = Math.atan2(point.y - bounds.cy, point.x - bounds.cx);
         return;
       }
@@ -1643,6 +1649,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         point.y <= bounds.maxY
       ) {
         isTranslatingRef.current = true;
+        setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
         return;
       }
@@ -1666,6 +1673,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         setSelectedStrokeIds([]);
         setSelectedShapeIds([]);
         isTranslatingRef.current = true;
+        setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
         return;
       }
@@ -1687,6 +1695,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         setSelectedImageId(null);
         if (!e.shiftKey) setSelectedStrokeIds([]);
         isTranslatingRef.current = true;
+        setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
         return;
       }
@@ -1701,6 +1710,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         setSelectedImageId(null);
         if (!e.shiftKey) setSelectedShapeIds([]);
         isTranslatingRef.current = true;
+        setIsDraggingActive(true);
         lastPointerRef.current = { x: point.x, y: point.y };
         return;
       }
@@ -1708,6 +1718,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       // If clicked empty space with Hand tool -> grab & pan the entire canvas!
       if (tool === 'hand') {
         setIsPanning(true);
+        setIsDraggingActive(true);
         setPanStart({ x: e.clientX - panX, y: e.clientY - panY });
         return;
       }
@@ -1855,7 +1866,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         newH = Math.max(minDim, initial.height + dy);
       }
 
-      handleUpdateImage({ width: newW, height: newH, x: newX, y: newY });
+      imagesRef.current = imagesRef.current.map((img) =>
+        img.id === selectedImageId ? { ...img, width: newW, height: newH, x: newX, y: newY } : img
+      );
       return;
     }
 
@@ -1940,7 +1953,15 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   };
 
   // Pointer Up Handler
-  const handlePointerUp = () => {
+  const handlePointerUp = (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+
+    setIsDraggingActive(false);
+
     if (isPanning) {
       setIsPanning(false);
       return;
@@ -1949,18 +1970,25 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (activeHandleRef.current) {
       activeHandleRef.current = null;
       activeImageStartRef.current = null;
+      setImages([...imagesRef.current]);
       saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
       return;
     }
 
     if (isRotatingRef.current) {
       isRotatingRef.current = false;
+      setStrokes([...strokesRef.current]);
+      setShapes([...shapesRef.current]);
+      setImages([...imagesRef.current]);
       saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
       return;
     }
 
     if (isTranslatingRef.current) {
       isTranslatingRef.current = false;
+      setStrokes([...strokesRef.current]);
+      setShapes([...shapesRef.current]);
+      setImages([...imagesRef.current]);
       saveCanvasData(strokesRef.current, shapesRef.current, imagesRef.current);
       return;
     }
@@ -2242,7 +2270,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING IMAGE EDIT TOOLBAR */}
-      {selectedImage && (
+      {selectedImage && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-40"
           style={{
@@ -2268,7 +2296,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING STROKES & SHAPES SELECTION TRANSFORM TOOLBAR */}
-      {currentSelectionBounds && !selectedImage && (
+      {currentSelectionBounds && !selectedImage && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/95 border border-sky-400 text-white shadow-2xl backdrop-blur-md text-xs animate-fade-in"
           style={{
