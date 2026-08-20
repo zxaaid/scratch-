@@ -74,7 +74,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
       id="bottom-page-toolbar"
       className="h-11 px-3 flex items-center justify-between border-t text-xs select-none z-20 shrink-0 font-sans shadow-lg gap-2 overflow-x-auto"
       style={{
-        backgroundColor: '#06141B',
+        backgroundColor: '#000000',
         borderColor: 'rgba(255, 255, 255, 0.08)',
         color: '#f1f5f9',
       }}
@@ -111,7 +111,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
               title="Jump to Page"
             >
               {notebookPages.map((p, idx) => (
-                <option key={p.id} value={p.id} className="bg-[#06141B] text-white">
+                <option key={p.id} value={p.id} className="bg-[#000000] text-white">
                   Page {idx + 1} / {notebookPages.length}: {p.title}
                 </option>
               ))}
@@ -146,19 +146,19 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
               className="bg-transparent text-gray-200 hover:text-white font-medium outline-none cursor-pointer text-[11px]"
               title="Page Template (Clean Blank Page, Ruled Lines, Grid, etc.)"
             >
-              <option value="blank" className="bg-[#06141B] text-white">
+              <option value="blank" className="bg-[#000000] text-white">
                 Clean Blank Page
               </option>
-              <option value="ruled" className="bg-[#06141B] text-white">
+              <option value="ruled" className="bg-[#000000] text-white">
                 Ruled Lines
               </option>
-              <option value="grid" className="bg-[#06141B] text-white">
+              <option value="grid" className="bg-[#000000] text-white">
                 Square Grid
               </option>
-              <option value="dot" className="bg-[#06141B] text-white">
+              <option value="dot" className="bg-[#000000] text-white">
                 Dot Matrix
               </option>
-              <option value="graph" className="bg-[#06141B] text-white">
+              <option value="graph" className="bg-[#000000] text-white">
                 Fine Graph
               </option>
             </select>
@@ -253,7 +253,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
             title="Select Workspace Size Preset"
           >
             {Object.values(PAGE_ASPECT_PRESETS).map((preset) => (
-              <option key={preset.id} value={preset.id} className="bg-[#06141B] text-white">
+              <option key={preset.id} value={preset.id} className="bg-[#000000] text-white">
                 {preset.name}
               </option>
             ))}
