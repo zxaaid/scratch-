@@ -136,7 +136,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
           </div>
         )}
 
-        {/* PAGE TEMPLATE SELECTOR (Clean Page / Blank / Ruled / Grid / Dot) */}
+        {/* PAGE TEMPLATE SELECTOR (Clean Page / Complete Black / Ruled / Grid / Fine Graph / Dot) */}
         {onChangeTemplate && (
           <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/10">
             <File size={12} className="text-white" />
@@ -144,10 +144,13 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
               value={currentTemplate}
               onChange={(e) => onChangeTemplate(e.target.value as PageTemplate)}
               className="bg-transparent text-gray-200 hover:text-white font-medium outline-none cursor-pointer text-[11px]"
-              title="Page Template (Clean Blank Page, Ruled Lines, Grid, etc.)"
+              title="Page Template (Clean Page, Complete Black #000000, Ruled Lines, Square Grid, Fine Graph, etc.)"
             >
               <option value="blank" className="bg-[#000000] text-white">
-                Clean Blank Page
+                Clean Page
+              </option>
+              <option value="black" className="bg-[#000000] text-white">
+                Complete Black (#000000)
               </option>
               <option value="ruled" className="bg-[#000000] text-white">
                 Ruled Lines
@@ -155,11 +158,17 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
               <option value="grid" className="bg-[#000000] text-white">
                 Square Grid
               </option>
+              <option value="graph" className="bg-[#000000] text-white">
+                Fine Graph
+              </option>
               <option value="dot" className="bg-[#000000] text-white">
                 Dot Matrix
               </option>
-              <option value="graph" className="bg-[#000000] text-white">
-                Fine Graph
+              <option value="dark-ruled" className="bg-[#000000] text-white">
+                Dark Ruled
+              </option>
+              <option value="dark-grid" className="bg-[#000000] text-white">
+                Dark Grid
               </option>
             </select>
           </div>

@@ -47,6 +47,7 @@ export interface PageAspectPreset {
 
 export type PageTemplate =
   | 'blank'
+  | 'black'
   | 'ruled'
   | 'grid'
   | 'dot'

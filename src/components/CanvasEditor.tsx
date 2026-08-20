@@ -953,11 +953,12 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     template: PageTemplate
   ) => {
     ctx.save();
+    const isBlackTemplate = template === 'black';
     const isDarkTemplate = template === 'dark-ruled' || template === 'dark-grid';
-    ctx.fillStyle = isDarkTemplate ? '#1e293b' : '#ffffff';
+    ctx.fillStyle = isBlackTemplate ? '#000000' : isDarkTemplate ? '#1e293b' : '#ffffff';
     ctx.fillRect(paperX, paperY, width, height);
 
-    ctx.strokeStyle = isDarkTemplate ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0';
+    ctx.strokeStyle = isBlackTemplate ? 'rgba(255, 255, 255, 0.12)' : isDarkTemplate ? 'rgba(255, 255, 255, 0.15)' : '#e2e8f0';
     ctx.lineWidth = 1 / zoom;
 
     if (template === 'ruled' || template === 'dark-ruled') {
@@ -1314,8 +1315,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.fillRect(paperX + 6 / zoom, paperY + 6 / zoom, pageWidth, pageHeight);
     }
 
+    const isBlackTemplate = page?.template === 'black';
     const isDarkTemplate = page?.template === 'dark-ruled' || page?.template === 'dark-grid';
-    ctx.fillStyle = isDarkTemplate ? '#1e293b' : '#ffffff';
+    ctx.fillStyle = isBlackTemplate ? '#000000' : isDarkTemplate ? '#1e293b' : '#ffffff';
     ctx.fillRect(paperX, paperY, pageWidth, pageHeight);
     ctx.restore();
 

@@ -193,11 +193,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => setDefaultTemplate(e.target.value as PageTemplate)}
             className="w-full bg-black/30 border border-white/10 rounded px-2 py-1.5 text-white outline-none"
           >
-            <option value="ruled">Ruled Paper</option>
-            <option value="grid">Grid Paper</option>
+            <option value="blank">Clean Page (Blank White)</option>
+            <option value="black">Complete Black (#000000)</option>
+            <option value="ruled">Ruled Lines</option>
+            <option value="grid">Square Grid</option>
+            <option value="graph">Fine Graph</option>
             <option value="dot">Dot Grid Paper</option>
-            <option value="graph">Graph Paper</option>
-            <option value="blank">Blank White</option>
             <option value="dark-ruled">Dark Ruled</option>
             <option value="dark-grid">Dark Grid</option>
           </select>
