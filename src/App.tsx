@@ -249,7 +249,7 @@ export default function App() {
   const [handwritingMode, setHandwritingMode] = useState<HandwritingMode>(1);
   const [isDisappearingInk, setIsDisappearingInk] = useState<boolean>(false);
   const [defaultTemplate, setDefaultTemplate] = useState<PageTemplate>('blank');
-  const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('a4-landscape');
+  const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('infinite');
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [canvasZoom, setCanvasZoom] = useState<number>(1.0);
   const canvasActionsRef = useRef<CanvasEditorActions | null>(null);

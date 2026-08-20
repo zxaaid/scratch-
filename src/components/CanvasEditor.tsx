@@ -1296,21 +1296,23 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     let pageWidth = pagePreset.width || 1123;
     let pageHeight = pagePreset.height || 794;
 
-    if (isFlexible || pageWidth === 0) {
-      pageWidth = Math.max(300, width / zoom);
-      pageHeight = Math.max(300, height / zoom);
-    } else if (isInfinite) {
-      pageWidth = Math.max(4500, (width * 3) / zoom);
-      pageHeight = Math.max(3200, (height * 3) / zoom);
+    if (isFlexible || isInfinite || pageWidth === 0) {
+      // Fit dynamically to container working canvas dimensions
+      const minW = Math.max(300, (width - panX) / zoom, width / zoom);
+      const minH = Math.max(300, (height - panY) / zoom, height / zoom);
+      pageWidth = isInfinite ? Math.max(6000, minW * 2) : minW;
+      pageHeight = isInfinite ? Math.max(4500, minH * 2) : minH;
     }
 
-    const paperX = 0;
-    const paperY = 0;
+    const paperX = isInfinite ? -1500 : 0;
+    const paperY = isInfinite ? -1500 : 0;
 
-    // LAYER 1: A4 Paper Card Drop Shadow & Paper Canvas
+    // LAYER 1: Paper Card Background & Drop Shadow
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.fillRect(paperX + 6 / zoom, paperY + 6 / zoom, pageWidth, pageHeight);
+    if (!isFlexible && !isInfinite) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.fillRect(paperX + 6 / zoom, paperY + 6 / zoom, pageWidth, pageHeight);
+    }
 
     const isDarkTemplate = page?.template === 'dark-ruled' || page?.template === 'dark-grid';
     ctx.fillStyle = isDarkTemplate ? '#1e293b' : '#ffffff';
@@ -1325,10 +1327,12 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       renderBackgroundGrid(ctx, paperX, paperY, pageWidth, pageHeight, page?.template || 'blank');
     }
 
-    // Page Border Outline
-    ctx.strokeStyle = currentTheme.includes('dark') ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.18)';
-    ctx.lineWidth = 1 / zoom;
-    ctx.strokeRect(paperX, paperY, pageWidth, pageHeight);
+    // Page Border Outline (only on bounded paper templates)
+    if (!isFlexible && !isInfinite) {
+      ctx.strokeStyle = currentTheme.includes('dark') ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.18)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.strokeRect(paperX, paperY, pageWidth, pageHeight);
+    }
 
     // LAYER 2: Practice Template Guide Background Overlay
     renderTemplateOverlay(ctx, paperX, paperY);
@@ -1558,16 +1562,21 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const isFlexible = pageAspectRatio === 'flexible';
-    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
-
-    if (isFlexible) {
+    if (pageAspectRatio === 'flexible') {
       setZoom(1.0);
-      setPanX(24);
-      setPanY(24);
+      setPanX(0);
+      setPanY(0);
       return;
     }
 
+    if (pageAspectRatio === 'infinite') {
+      setZoom(1.0);
+      setPanX(0);
+      setPanY(0);
+      return;
+    }
+
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
     const pWidth = pagePreset.width || 1123;
     const pHeight = pagePreset.height || 794;
 
@@ -1590,14 +1599,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const h = container.clientHeight;
     if (w <= 0 || h <= 0) return;
 
-    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
-    if (pageAspectRatio === 'flexible') {
+    if (pageAspectRatio === 'flexible' || pageAspectRatio === 'infinite') {
       setZoom(1.0);
       setPanX(0);
       setPanY(0);
       return;
     }
 
+    const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
     const pWidth = pagePreset.width || 1123;
     const pHeight = pagePreset.height || 794;
     const fitZoom = Math.max(0.25, Math.min(w / pWidth, h / pHeight));
