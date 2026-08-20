@@ -83,7 +83,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
       <div className="flex items-center gap-2 shrink-0">
         {activePageTitle && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/40 border border-white/10 font-medium text-gray-200">
-            <FileText size={13} className="text-[#F4DB08]" />
+            <FileText size={13} className="text-white" />
             <span className="max-w-[130px] truncate text-[11px]">{activePageTitle}</span>
           </div>
         )}
@@ -107,7 +107,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
             <select
               value={notebookPages[currentPageIndex ?? 0]?.id || ''}
               onChange={(e) => onSelectPage && onSelectPage(e.target.value)}
-              className="bg-transparent text-[#F4DB08] font-semibold px-1 py-0.5 outline-none cursor-pointer text-xs"
+              className="bg-transparent text-white font-semibold px-1 py-0.5 outline-none cursor-pointer text-xs"
               title="Jump to Page"
             >
               {notebookPages.map((p, idx) => (
@@ -139,7 +139,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
         {/* PAGE TEMPLATE SELECTOR (Clean Page / Blank / Ruled / Grid / Dot) */}
         {onChangeTemplate && (
           <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/10">
-            <File size={12} className="text-[#F4DB08]" />
+            <File size={12} className="text-white" />
             <select
               value={currentTemplate}
               onChange={(e) => onChangeTemplate(e.target.value as PageTemplate)}
@@ -183,7 +183,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
           {onCenterAndFit && (
             <button
               onClick={onCenterAndFit}
-              className="px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#F4DB08] hover:text-yellow-300 hover:bg-white/10 rounded cursor-pointer transition-all"
+              className="px-1.5 py-0.5 font-mono text-[11px] font-semibold text-white hover:text-gray-200 hover:bg-white/10 rounded cursor-pointer transition-all"
               title="Click to Reset Zoom & Center Page"
             >
               {Math.round(zoom * 100)}%
@@ -236,7 +236,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
         {/* + ADD PAGE BUTTON */}
         <button
           onClick={onAddPage}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F4DB08] hover:bg-yellow-400 font-semibold text-black shadow-sm transition-all active:scale-95 cursor-pointer text-xs"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-gray-200 font-semibold text-black shadow-sm transition-all active:scale-95 cursor-pointer text-xs"
           title="Add a new clean page to this document"
         >
           <Plus size={14} className="stroke-[2.5]" />
@@ -245,7 +245,7 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
 
         {/* ASPECT RATIO & WORKING AREA PRESET DROPDOWN */}
         <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/10 text-gray-300">
-          <LayoutGrid size={13} className="text-[#F4DB08]" />
+          <LayoutGrid size={13} className="text-white" />
           <select
             value={pageAspectRatio}
             onChange={(e) => onSetPageAspectRatio(e.target.value as PageAspectRatio)}
@@ -266,8 +266,8 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
             onClick={onToggleZenMode}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer border text-xs ${
               isZenMode
-                ? 'bg-[#F4DB08]/20 text-[#F4DB08] border-[#F4DB08]/80 shadow-[0_0_10px_rgba(244,219,8,0.25)]'
-                : 'bg-black/40 hover:bg-black/60 text-gray-300 hover:text-[#F4DB08] border-white/10 hover:border-[#F4DB08]/40'
+                ? 'bg-white/20 text-white border-white shadow-[0_0_10px_rgba(255,255,255,0.25)]'
+                : 'bg-black/40 hover:bg-black/60 text-gray-300 hover:text-white border-white/10 hover:border-white/40'
             }`}
             title={
               isZenMode

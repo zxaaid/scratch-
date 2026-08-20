@@ -61,8 +61,8 @@ interface PenToolbarProps {
 const QUICK_COLORS = [
   '#000000', // Pitch Black (#000000)
   '#06141B', // Deep Navy Midnight (#06141B)
-  '#F4DB08', // Electric Gold (#F4DB08)
-  '#ffffff', // Clean White
+  '#ffffff', // Pure White (#ffffff)
+  '#94a3b8', // Slate Gray
   '#dc2626', // Crimson Red
   '#16a34a', // Emerald Green
   '#38bdf8', // Sky Blue
@@ -168,7 +168,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               }}
               className={`p-1.5 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-[#F4DB08] text-black shadow-md font-bold'
+                  ? 'bg-white text-black shadow-md font-bold ring-1 ring-white/80'
                   : 'hover:bg-white/10 text-gray-300'
               }`}
               title={t.label}
@@ -181,7 +181,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
         {/* Add Image / PDF Button */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="p-1.5 rounded-lg flex items-center gap-1 hover:bg-white/10 text-[#F4DB08] hover:brightness-110 transition-all cursor-pointer font-medium"
+          className="p-1.5 rounded-lg flex items-center gap-1 hover:bg-white/10 text-white hover:brightness-110 transition-all cursor-pointer font-medium"
           title="Add Image (PNG, JPG, SVG, WebP) or PDF to Canvas"
         >
           <ImagePlus size={16} />
@@ -197,17 +197,17 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
             }}
             className={`px-2 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               currentTool === 'shape'
-                ? 'bg-[#F4DB08] text-black font-bold ring-1 ring-[#F4DB08]/80 shadow-md'
+                ? 'bg-white text-black font-bold ring-1 ring-white shadow-md'
                 : 'hover:bg-white/10 text-gray-300'
             }`}
             title="Click to select and draw shapes on the canvas"
           >
             {selectedShape === 'line' && <Minus size={15} className="text-purple-300" />}
-            {selectedShape === 'arrow' && <ArrowRight size={15} className="text-amber-300" />}
+            {selectedShape === 'arrow' && <ArrowRight size={15} className="text-sky-300" />}
             {selectedShape === 'rectangle' && <Square size={15} className="text-sky-300" />}
             {selectedShape === 'circle' && <Circle size={15} className="text-emerald-300" />}
             {selectedShape === 'polygon' && <Triangle size={15} className="text-rose-300" />}
-            {selectedShape === 'star' && <Star size={15} className="text-yellow-300" />}
+            {selectedShape === 'star' && <Star size={15} className="text-white" />}
             {selectedShape === 'hexagon' && <Hexagon size={15} className="text-teal-300" />}
             {selectedShape === 'diamond' && <Gem size={15} className="text-cyan-300" />}
             <span className="capitalize hidden sm:inline text-[11px]">{selectedShape}</span>
@@ -219,14 +219,14 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               className="absolute left-0 top-full mt-1.5 w-44 p-1.5 rounded-xl shadow-2xl border z-50 flex flex-col gap-0.5 text-xs backdrop-blur-md"
               style={{ backgroundColor: theme.commandPaletteBg, borderColor: theme.border }}
             >
-              <div className="px-2.5 py-1 text-[10px] font-bold text-[#F4DB08] uppercase tracking-wider border-b border-white/10 mb-1 flex items-center justify-between">
+              <div className="px-2.5 py-1 text-[10px] font-bold text-white uppercase tracking-wider border-b border-white/10 mb-1 flex items-center justify-between">
                 <span>Select Shape</span>
                 <span className="text-[9px] text-gray-400 normal-case font-normal">Draw on canvas</span>
               </div>
               <button
                 onClick={() => { setSelectedShape('rectangle'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'rectangle' && currentTool === 'shape' ? 'bg-[#F4DB08] text-black font-bold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'rectangle' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Square size={15} className="text-sky-400 shrink-0" /> <span>Rectangle</span>
@@ -234,7 +234,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               <button
                 onClick={() => { setSelectedShape('circle'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'circle' && currentTool === 'shape' ? 'bg-[#F4DB08] text-black font-bold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'circle' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Circle size={15} className="text-emerald-400 shrink-0" /> <span>Circle / Ellipse</span>
@@ -242,7 +242,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               <button
                 onClick={() => { setSelectedShape('polygon'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'polygon' && currentTool === 'shape' ? 'bg-[#F4DB08] text-black font-bold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'polygon' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Triangle size={15} className="text-rose-400 shrink-0" /> <span>Triangle</span>
@@ -250,15 +250,15 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               <button
                 onClick={() => { setSelectedShape('star'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'star' && currentTool === 'shape' ? 'bg-sky-600 text-white font-semibold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'star' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
-                <Star size={15} className="text-yellow-400 shrink-0" /> <span>Star</span>
+                <Star size={15} className="text-white shrink-0" /> <span>Star</span>
               </button>
               <button
                 onClick={() => { setSelectedShape('diamond'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'diamond' && currentTool === 'shape' ? 'bg-sky-600 text-white font-semibold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'diamond' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Gem size={15} className="text-cyan-400 shrink-0" /> <span>Diamond</span>
@@ -266,7 +266,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               <button
                 onClick={() => { setSelectedShape('hexagon'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'hexagon' && currentTool === 'shape' ? 'bg-sky-600 text-white font-semibold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'hexagon' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Hexagon size={15} className="text-teal-400 shrink-0" /> <span>Hexagon</span>
@@ -274,15 +274,15 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               <button
                 onClick={() => { setSelectedShape('arrow'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'arrow' && currentTool === 'shape' ? 'bg-sky-600 text-white font-semibold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'arrow' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
-                <ArrowRight size={15} className="text-amber-400 shrink-0" /> <span>Arrow</span>
+                <ArrowRight size={15} className="text-sky-400 shrink-0" /> <span>Arrow</span>
               </button>
               <button
                 onClick={() => { setSelectedShape('line'); setCurrentTool('shape'); setShowShapeMenu(false); }}
                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
-                  selectedShape === 'line' && currentTool === 'shape' ? 'bg-sky-600 text-white font-semibold' : 'hover:bg-white/10 text-gray-200'
+                  selectedShape === 'line' && currentTool === 'shape' ? 'bg-white text-black font-bold' : 'hover:bg-white/10 text-gray-200'
                 }`}
               >
                 <Minus size={15} className="text-purple-400 shrink-0" /> <span>Straight Line</span>
@@ -301,7 +301,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               key={c}
               onClick={() => setColor(c)}
               className={`w-5 h-5 rounded-full border transition-transform cursor-pointer ${
-                color.toLowerCase() === c.toLowerCase() ? 'scale-125 border-[#F4DB08] ring-2 ring-[#F4DB08]/50' : 'border-white/20 hover:scale-110'
+                color.toLowerCase() === c.toLowerCase() ? 'scale-125 border-white ring-2 ring-white/60' : 'border-white/20 hover:scale-110'
               }`}
               style={{ backgroundColor: c }}
             />
@@ -313,7 +313,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
               onChange={(e) => setColor(e.target.value)}
               className="opacity-0 absolute inset-0 cursor-pointer"
             />
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-[#F4DB08] via-amber-400 to-[#06141B]" />
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-tr from-white via-slate-400 to-[#06141B]" />
           </label>
         </div>
 
@@ -331,7 +331,7 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
             step="0.5"
             value={strokeWidth}
             onChange={(e) => setStrokeWidth(parseFloat(e.target.value))}
-            className="w-20 accent-[#F4DB08] cursor-pointer"
+            className="w-20 accent-white cursor-pointer"
           />
           <span className="text-[10px] text-gray-300 w-6 font-mono">{strokeWidth}px</span>
         </div>
@@ -341,20 +341,20 @@ export const PenToolbar: React.FC<PenToolbarProps> = ({
           onClick={onToggleDisappearingInk}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all cursor-pointer ${
             isDisappearingInk
-              ? 'bg-[#F4DB08]/20 border-[#F4DB08] text-[#F4DB08] shadow-md shadow-[#F4DB08]/20 ring-1 ring-[#F4DB08]/60 animate-pulse'
+              ? 'bg-white/20 border-white text-white shadow-md shadow-white/20 ring-1 ring-white/60 animate-pulse'
               : 'bg-black/30 hover:bg-white/10 border-white/10 text-gray-300 hover:text-white'
           }`}
           title="Vanishing Ink: When enabled, anything you draw with any pen style blinks for a few seconds and automatically disappears!"
         >
           <Sparkles
             size={14}
-            className={`${isDisappearingInk ? 'text-[#F4DB08] animate-spin-slow' : 'text-gray-400'}`}
+            className={`${isDisappearingInk ? 'text-white animate-spin-slow' : 'text-gray-400'}`}
           />
           <span className="font-semibold">
             {isDisappearingInk ? 'Vanishing Ink: ON' : 'Vanishing Ink'}
           </span>
           {isDisappearingInk && (
-            <span className="w-1.5 h-1.5 rounded-full bg-[#F4DB08] animate-ping" />
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
           )}
         </button>
       </div>

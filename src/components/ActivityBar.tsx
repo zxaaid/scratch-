@@ -60,7 +60,7 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
         {/* App Logo / Pen Icon */}
         <div
           className="w-9 h-9 mb-2 flex items-center justify-center rounded-md font-black text-xs shadow-sm cursor-pointer transition-all hover:scale-105"
-          style={{ backgroundColor: '#F4DB08', color: '#000000' }}
+          style={{ backgroundColor: '#ffffff', color: '#000000' }}
           title="Handwriting Workspace"
         >
           HW
