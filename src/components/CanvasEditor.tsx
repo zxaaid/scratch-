@@ -2478,6 +2478,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         onDoubleClick={handleDoubleClick}
+        onContextMenu={(e) => e.preventDefault()}
         className="w-full h-full block touch-none"
       />
 

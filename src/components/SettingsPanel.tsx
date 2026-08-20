@@ -210,10 +210,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             Shortcuts Reference
           </label>
           <div className="space-y-1 bg-black/20 p-2 rounded border border-white/5">
-            <div className="flex justify-between"><span>Command Palette</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Ctrl+Shift+P</kbd></div>
-            <div className="flex justify-between"><span>Pen Tool</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">B</kbd></div>
+            <div className="flex justify-between"><span>Pen / Ink Tool</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Ctrl+Shift+P / P</kbd></div>
+            <div className="flex justify-between"><span>Hand Gesture / Tool</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Ctrl+Shift+H / H</kbd></div>
             <div className="flex justify-between"><span>Eraser Tool</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">E</kbd></div>
             <div className="flex justify-between"><span>Lasso Tool</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">L</kbd></div>
+            <div className="flex justify-between"><span>Command Palette</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Ctrl+K / F1</kbd></div>
             <div className="flex justify-between"><span>Pan Canvas</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Space + Drag</kbd></div>
             <div className="flex justify-between"><span>Undo / Redo</span><kbd className="px-1 bg-white/10 rounded text-[9px] text-white">Ctrl+Z / Ctrl+Y</kbd></div>
           </div>

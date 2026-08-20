@@ -840,10 +840,23 @@ export default function App() {
           handleConnectLocalDirectory();
         }
       }
-      // Command Palette (Ctrl+Shift+P)
+      // Pen / Ink Tool (Ctrl+Shift+P)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
+        setCurrentTool('pen');
+        return;
+      }
+      // Hand Tool / Gesture (Ctrl+Shift+H)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        setCurrentTool('hand');
+        return;
+      }
+      // Command Palette (Ctrl+K or F1)
+      if (((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') || e.key === 'F1') {
+        e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+        return;
       }
       // New Page (Ctrl+N)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
