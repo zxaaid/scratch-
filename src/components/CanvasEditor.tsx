@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import {
   Point,
   Stroke,
+  VanishingStroke,
   ShapeElement,
   ImageElement,
   ImageCrop,
@@ -89,6 +90,17 @@ interface CanvasEditorProps {
   onSetPageAspectRatio?: (ratio: PageAspectRatio) => void;
   isZenMode?: boolean;
   onToggleZenMode?: () => void;
+  isDisappearingInk?: boolean;
+  actionsRef?: React.MutableRefObject<CanvasEditorActions | null>;
+  onZoomChange?: (zoom: number) => void;
+}
+
+export interface CanvasEditorActions {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  centerAndFit: () => void;
+  fitWidth: () => void;
+  fitFullScreen: () => void;
 }
 
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({
@@ -114,6 +126,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   onSetPageAspectRatio,
   isZenMode = false,
   onToggleZenMode,
+  isDisappearingInk = false,
+  actionsRef,
+  onZoomChange,
 }) => {
   const theme = THEMES[currentTheme];
   const containerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +152,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   const strokesRef = useRef<Stroke[]>([]);
   const shapesRef = useRef<ShapeElement[]>([]);
   const imagesRef = useRef<ImageElement[]>([]);
+  const vanishingStrokesRef = useRef<VanishingStroke[]>([]);
 
   // Loaded HTMLImageElement cache map for smooth 60fps canvas rendering
   const loadedImagesMapRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -168,6 +184,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
   // Lasso State
   const [lassoPoints, setLassoPoints] = useState<Point[]>([]);
+  const lassoPointsRef = useRef<Point[]>([]);
   const [isLassoing, setIsLassoing] = useState<boolean>(false);
 
   // Interaction Mode Refs for Dragging/Rotating Selection
@@ -258,9 +275,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
   }, [page?.id, page?.updatedAt, pdf?.id, pdfPageNum]);
 
-  // Auto-deselect all elements when switching away from selection tools (Cursor or Hand)
+  // Auto-deselect all elements when switching away from selection tools (Cursor, Hand, Lasso)
   useEffect(() => {
-    if (tool !== 'cursor' && tool !== 'hand') {
+    if (tool !== 'cursor' && tool !== 'hand' && tool !== 'lasso') {
       setSelectedImageId(null);
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
@@ -1018,7 +1035,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     const imgObj = loadedImagesMapRef.current.get(imgElement.id);
     if (!imgObj || !imgObj.complete) return;
 
-    const isSelected = selectedImageId === imgElement.id && (tool === 'cursor' || tool === 'hand');
+    const isSelected = selectedImageId === imgElement.id && (tool === 'cursor' || tool === 'hand' || tool === 'lasso');
     const w = imgElement.width;
     const h = imgElement.height;
 
@@ -1305,7 +1322,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.drawImage(pdfCanvasCacheRef.current, paperX, paperY, pageWidth, pageHeight);
     } else {
       // Render Grid Paper Background
-      renderBackgroundGrid(ctx, paperX, paperY, pageWidth, pageHeight, page?.template || 'ruled');
+      renderBackgroundGrid(ctx, paperX, paperY, pageWidth, pageHeight, page?.template || 'blank');
     }
 
     // Page Border Outline
@@ -1340,6 +1357,11 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
+      if (isDisappearingInk) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 8 / zoom;
+      }
+
       if (tool === 'highlighter') {
         ctx.globalCompositeOperation = 'multiply';
       }
@@ -1369,6 +1391,69 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       ctx.restore();
     }
 
+    // LAYER 5.8: Render Vanishing / Blinking Disappearing Strokes
+    const currentVanishing = vanishingStrokesRef.current;
+    if (currentVanishing.length > 0) {
+      const now = performance.now();
+      let hasActiveVanishing = false;
+
+      currentVanishing.forEach((vStroke) => {
+        const elapsed = now - vStroke.createdAt;
+        if (elapsed < vStroke.durationMs) {
+          hasActiveVanishing = true;
+          const pts = vStroke.smoothedPoints || vStroke.points;
+          if (pts.length < 2) return;
+
+          // Blinking pulse calculation (smoothly pulsing brightness/opacity 3-4 times)
+          const blinkWave = 0.28 + 0.72 * Math.abs(Math.sin((elapsed / 220) * Math.PI));
+          // Fade out during the final 800ms of lifetime
+          const fadeFactor = elapsed > vStroke.durationMs - 800
+            ? Math.max(0, (vStroke.durationMs - elapsed) / 800)
+            : 1.0;
+          const currentAlpha = Math.max(0, Math.min(1, vStroke.opacity * blinkWave * fadeFactor));
+
+          ctx.save();
+          ctx.strokeStyle = vStroke.color;
+          ctx.fillStyle = vStroke.color;
+          ctx.globalAlpha = currentAlpha;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          // Pulsing neon glow aura
+          ctx.shadowColor = vStroke.color;
+          ctx.shadowBlur = (10 + 8 * blinkWave) / zoom;
+
+          for (let i = 1; i < pts.length; i++) {
+            const p1 = pts[i - 1];
+            const p2 = pts[i];
+            const segWidth = calculateWidth(
+              vStroke.width,
+              vStroke.tool,
+              p1,
+              p2,
+              tabletSettings.pressureSensitivity
+            );
+            ctx.beginPath();
+            ctx.lineWidth = segWidth;
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      });
+
+      // Prune expired vanishing strokes
+      vanishingStrokesRef.current = currentVanishing.filter(
+        (vs) => now - vs.createdAt < vs.durationMs
+      );
+
+      // Loop animation frame if there are still active vanishing strokes to animate
+      if (hasActiveVanishing || vanishingStrokesRef.current.length > 0) {
+        requestAnimationFrame(drawCanvas);
+      }
+    }
+
     // Active Lasso Trail
     if (isLassoing && lassoPoints.length > 1) {
       ctx.save();
@@ -1395,7 +1480,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
 
     // Selection Bounds for strokes/shapes
-    const bounds = (tool === 'cursor' || tool === 'hand') ? getSelectionBounds() : null;
+    const bounds = (tool === 'cursor' || tool === 'hand' || tool === 'lasso') ? getSelectionBounds() : null;
     if (bounds) {
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
@@ -1533,6 +1618,35 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     setZoom(targetZoom);
     setPanX(12);
   }, [pageAspectRatio]);
+
+  // Sync zoom changes to parent for external toolbars
+  useEffect(() => {
+    if (onZoomChange) {
+      onZoomChange(zoom);
+    }
+  }, [zoom, onZoomChange]);
+
+  // Expose viewport action handlers externally to parent / BottomPageToolbar
+  useEffect(() => {
+    if (actionsRef) {
+      actionsRef.current = {
+        zoomIn: () => setZoom((z) => Math.min(4.0, z + 0.1)),
+        zoomOut: () => {
+          const container = containerRef.current;
+          if (!container) return;
+          const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
+          const pWidth = pagePreset.width || 1123;
+          const pHeight = pagePreset.height || 794;
+          const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
+          const minZ = Math.max(0.35, Math.min(fitZoom, 0.95));
+          setZoom((z) => Math.max(minZ, z - 0.1));
+        },
+        centerAndFit: centerAndFitPage,
+        fitWidth: fitWidthPage,
+        fitFullScreen: fitFullScreenPage,
+      };
+    }
+  }, [actionsRef, pageAspectRatio, centerAndFitPage, fitWidthPage, fitFullScreenPage]);
 
   // Center page on select or aspect ratio change
   useEffect(() => {
@@ -1757,11 +1871,38 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     // 4. LASSO TOOL BEHAVIOR
     if (tool === 'lasso') {
+      const bounds = getSelectionBounds();
+      if (bounds) {
+        const knobY = bounds.minY - 26 / zoom;
+        const hitRadius = 12 / zoom;
+        if (Math.hypot(point.x - bounds.cx, point.y - knobY) <= hitRadius) {
+          isRotatingRef.current = true;
+          setIsDraggingActive(true);
+          lastAngleRadRef.current = Math.atan2(point.y - bounds.cy, point.x - bounds.cx);
+          return;
+        }
+
+        if (
+          point.x >= bounds.minX &&
+          point.x <= bounds.maxX &&
+          point.y >= bounds.minY &&
+          point.y <= bounds.maxY
+        ) {
+          isTranslatingRef.current = true;
+          setIsDraggingActive(true);
+          lastPointerRef.current = { x: point.x, y: point.y };
+          return;
+        }
+      }
+
       setIsLassoing(true);
+      setIsDraggingActive(true);
+      lassoPointsRef.current = [point];
       setLassoPoints([point]);
       setSelectedStrokeIds([]);
       setSelectedShapeIds([]);
       setSelectedImageId(null);
+      setIsCropping(false);
       return;
     }
 
@@ -1963,6 +2104,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
     // Handle Lasso Trail
     if (isLassoing) {
+      lassoPointsRef.current.push(point);
       setLassoPoints((prev) => [...prev, point]);
       return;
     }
@@ -2056,24 +2198,64 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     // Complete Lasso Selection
     if (isLassoing) {
       setIsLassoing(false);
-      if (lassoPoints.length > 3) {
-        const minX = Math.min(...lassoPoints.map((p) => p.x));
-        const maxX = Math.max(...lassoPoints.map((p) => p.x));
-        const minY = Math.min(...lassoPoints.map((p) => p.y));
-        const maxY = Math.max(...lassoPoints.map((p) => p.y));
+      const pts = lassoPointsRef.current;
+      if (pts.length > 2) {
+        const minX = Math.min(...pts.map((p) => p.x));
+        const maxX = Math.max(...pts.map((p) => p.x));
+        const minY = Math.min(...pts.map((p) => p.y));
+        const maxY = Math.max(...pts.map((p) => p.y));
 
-        const selectedSt = strokesRef.current.filter((st) =>
-          st.points.some((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
-        );
+        // Accurate ray-casting polygon containment check
+        const isPointInPoly = (p: { x: number; y: number }) => {
+          let inside = false;
+          for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const xi = pts[i].x;
+            const yi = pts[i].y;
+            const xj = pts[j].x;
+            const yj = pts[j].y;
+            const intersect =
+              yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi + 1e-9) + xi;
+            if (intersect) inside = !inside;
+          }
+          return inside;
+        };
+
+        const selectedSt = strokesRef.current.filter((st) => {
+          if (!st.points || st.points.length === 0) return false;
+          return (
+            st.points.some((p) => isPointInPoly(p)) ||
+            st.points.some((p) => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+          );
+        });
+
         const selectedSh = shapesRef.current.filter((sh) => {
           const sw = sh.width || 120;
           const shh = sh.height || 80;
-          return sh.x >= minX && sh.x + sw <= maxX && sh.y >= minY && sh.y + shh <= maxY;
+          const cx = sh.x + sw / 2;
+          const cy = sh.y + shh / 2;
+          return (
+            isPointInPoly({ x: cx, y: cy }) ||
+            isPointInPoly({ x: sh.x, y: sh.y }) ||
+            (sh.x >= minX && sh.x + sw <= maxX && sh.y >= minY && sh.y + shh <= maxY)
+          );
+        });
+
+        const selectedImgs = imagesRef.current.filter((img) => {
+          const cx = img.x + img.width / 2;
+          const cy = img.y + img.height / 2;
+          return (
+            isPointInPoly({ x: cx, y: cy }) ||
+            (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY)
+          );
         });
 
         setSelectedStrokeIds(selectedSt.map((s) => s.id));
         setSelectedShapeIds(selectedSh.map((s) => s.id));
+        if (selectedImgs.length > 0) {
+          setSelectedImageId(selectedImgs[0].id);
+        }
       }
+      lassoPointsRef.current = [];
       setLassoPoints([]);
       return;
     }
@@ -2102,24 +2284,42 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 
         const smoothedPoints = catmullRomSmooth(processedPoints, 4);
 
-        const newStroke: Stroke = {
-          id: `st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          tool,
-          color,
-          width: strokeWidth,
-          opacity,
-          points: processedPoints,
-          smoothedPoints,
-          handwritingMode,
-        };
+        if (isDisappearingInk) {
+          // Vanishing Ink Mode: Create a transient stroke that blinks and automatically disappears
+          const newVanishingStroke: VanishingStroke = {
+            id: `vst_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            tool,
+            color,
+            width: strokeWidth,
+            opacity,
+            points: processedPoints,
+            smoothedPoints,
+            createdAt: performance.now(),
+            durationMs: 3200, // Blinks for ~3.2 seconds then completely vanishes
+          };
 
-        const updatedStrokes = [...strokesRef.current, newStroke];
-        setStrokes(updatedStrokes);
-        strokesRef.current = updatedStrokes;
-        saveCanvasData(updatedStrokes, shapesRef.current, imagesRef.current);
+          vanishingStrokesRef.current.push(newVanishingStroke);
+          requestAnimationFrame(drawCanvas);
+        } else {
+          const newStroke: Stroke = {
+            id: `st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            tool,
+            color,
+            width: strokeWidth,
+            opacity,
+            points: processedPoints,
+            smoothedPoints,
+            handwritingMode,
+          };
 
-        const feedback = analyzeHandwritingQuality(updatedStrokes, activeTemplate || undefined);
-        if (onFeedbackUpdate) onFeedbackUpdate(feedback);
+          const updatedStrokes = [...strokesRef.current, newStroke];
+          setStrokes(updatedStrokes);
+          strokesRef.current = updatedStrokes;
+          saveCanvasData(updatedStrokes, shapesRef.current, imagesRef.current);
+
+          const feedback = analyzeHandwritingQuality(updatedStrokes, activeTemplate || undefined);
+          if (onFeedbackUpdate) onFeedbackUpdate(feedback);
+        }
       }
     }
   };
@@ -2291,7 +2491,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING IMAGE EDIT TOOLBAR */}
-      {selectedImage && (tool === 'cursor' || tool === 'hand') && !isDraggingActive && !isPanning && (
+      {selectedImage && (tool === 'cursor' || tool === 'hand' || tool === 'lasso') && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-40"
           style={{
@@ -2317,7 +2517,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       )}
 
       {/* FLOATING STROKES & SHAPES SELECTION TRANSFORM TOOLBAR */}
-      {currentSelectionBounds && (tool === 'cursor' || tool === 'hand') && !selectedImage && !isDraggingActive && !isPanning && (
+      {currentSelectionBounds && (tool === 'cursor' || tool === 'hand' || tool === 'lasso') && !selectedImage && !isDraggingActive && !isPanning && (
         <div
           className="absolute z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/95 border border-sky-400 text-white shadow-2xl backdrop-blur-md text-xs animate-fade-in"
           style={{
@@ -2411,90 +2611,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           </button>
         </div>
       )}
-
-      {/* BOTTOM RIGHT VIEWPORT CONTROLS */}
-      <div className="absolute bottom-4 right-4 flex items-center gap-1.5 p-1 rounded-lg bg-black/75 border border-white/15 text-white shadow-2xl backdrop-blur-md text-xs z-30">
-        <button
-          onClick={() => {
-            const container = containerRef.current;
-            if (!container) return;
-            const pagePreset = PAGE_ASPECT_PRESETS[pageAspectRatio] || PAGE_ASPECT_PRESETS['a4-landscape'];
-            const pWidth = pagePreset.width || 1123;
-            const pHeight = pagePreset.height || 794;
-            const fitZoom = Math.min((container.clientWidth - 48) / pWidth, (container.clientHeight - 48) / pHeight);
-            const minZ = Math.max(0.35, Math.min(fitZoom, 0.95));
-            setZoom((z) => Math.max(minZ, z - 0.1));
-          }}
-          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
-          title="Zoom Out"
-        >
-          <ZoomOut size={15} />
-        </button>
-
-        <button
-          onClick={centerAndFitPage}
-          className="px-2 py-1 font-mono font-semibold text-sky-400 hover:text-sky-300 hover:bg-white/10 rounded cursor-pointer transition-all"
-          title="Click to Reset & Center Page"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-
-        <button
-          onClick={() => setZoom((z) => Math.min(4.0, z + 0.1))}
-          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-white transition-colors cursor-pointer"
-          title="Zoom In"
-        >
-          <ZoomIn size={15} />
-        </button>
-
-        <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
-
-        <button
-          onClick={fitFullScreenPage}
-          className="p-1.5 rounded hover:bg-white/20 text-gray-200 hover:text-sky-300 transition-colors cursor-pointer"
-          title="Fit Full Screen (Maximize Canvas on Viewport)"
-        >
-          <Expand size={15} />
-        </button>
-
-        <button
-          onClick={fitWidthPage}
-          className="px-2 py-1 rounded hover:bg-white/20 text-gray-300 hover:text-white transition-all text-[11px] font-medium cursor-pointer"
-          title="Fit Page to Width"
-        >
-          Fit Width
-        </button>
-
-        <button
-          onClick={centerAndFitPage}
-          className="px-2.5 py-1 rounded bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 hover:text-white flex items-center gap-1.5 transition-all text-[11px] font-medium cursor-pointer border border-sky-500/40"
-          title="Center & Fit Perfect Page on Screen"
-        >
-          <FileText size={14} />
-          Center
-        </button>
-
-        {onToggleZenMode && (
-          <>
-            <div className="h-4 w-[1px] bg-white/20 mx-0.5" />
-            <button
-              onClick={onToggleZenMode}
-              className={`p-1.5 rounded transition-all cursor-pointer border ${
-                isZenMode
-                  ? 'bg-sky-500/40 text-sky-200 border-sky-400'
-                  : 'hover:bg-white/20 text-gray-300 hover:text-sky-300 border-transparent'
-              }`}
-              title={
-                isZenMode
-                  ? 'Exit Zen Maximize Mode'
-                  : 'Maximize Working Area (Zen Mode: Collapse Sidebars & Toolbars)'
-              }
-            >
-              {isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            </button>
-          </>
-        )}
-      </div>
 
       {/* TEXT / STICKY NOTE EDITING OVERLAY MODAL */}
       {editingTextElement && (

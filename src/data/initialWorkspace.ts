@@ -40,7 +40,7 @@ export const INITIAL_WORKSPACE: Workspace = {
         {
           id: 'pg_schrodinger',
           title: '1. Schrödinger Equation & Wavefunction',
-          template: 'ruled',
+          template: 'blank',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tags: ['Quantum', 'Math'],
@@ -126,7 +126,7 @@ export const INITIAL_WORKSPACE: Workspace = {
         {
           id: 'pg_particle_box',
           title: '2. Particle in a 1D Box',
-          template: 'grid',
+          template: 'blank',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tags: ['Quantum', 'Bound States'],
@@ -171,7 +171,7 @@ export const INITIAL_WORKSPACE: Workspace = {
         {
           id: 'pg_microservices',
           title: 'Microservice Event Bus & Queueing',
-          template: 'dot',
+          template: 'blank',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           tags: ['Kafka', 'Event Driven'],

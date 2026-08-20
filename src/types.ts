@@ -83,6 +83,18 @@ export interface Stroke {
   isSelected?: boolean;
 }
 
+export interface VanishingStroke {
+  id: string;
+  tool: PenToolType;
+  color: string;
+  width: number;
+  opacity: number;
+  points: Point[];
+  smoothedPoints?: Point[];
+  createdAt: number;
+  durationMs: number;
+}
+
 export interface ShapeElement {
   id: string;
   type: ShapeType | 'text' | 'sticky';

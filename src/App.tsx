@@ -30,9 +30,8 @@ import { SearchPanel } from './components/SearchPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TabBar } from './components/TabBar';
 import { PenToolbar } from './components/PenToolbar';
-import { CanvasEditor } from './components/CanvasEditor';
+import { CanvasEditor, CanvasEditorActions } from './components/CanvasEditor';
 import { BottomPageToolbar } from './components/BottomPageToolbar';
-import { StatusBar } from './components/StatusBar';
 import { CommandPalette } from './components/CommandPalette';
 import { THEMES } from './lib/themes';
 import {
@@ -248,9 +247,12 @@ export default function App() {
   const [strokeWidth, setStrokeWidth] = useState<number>(2.5);
   const [opacity, setOpacity] = useState<number>(1.0);
   const [handwritingMode, setHandwritingMode] = useState<HandwritingMode>(1);
-  const [defaultTemplate, setDefaultTemplate] = useState<PageTemplate>('ruled');
+  const [isDisappearingInk, setIsDisappearingInk] = useState<boolean>(false);
+  const [defaultTemplate, setDefaultTemplate] = useState<PageTemplate>('blank');
   const [pageAspectRatio, setPageAspectRatio] = useState<PageAspectRatio>('a4-landscape');
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [canvasZoom, setCanvasZoom] = useState<number>(1.0);
+  const canvasActionsRef = useRef<CanvasEditorActions | null>(null);
   const [penPresets, setPenPresets] = useState<PenPreset[]>(INITIAL_PEN_PRESETS);
   const [tabletSettings, setTabletSettings] = useState<TabletSettings>(INITIAL_TABLET_SETTINGS);
 
@@ -519,6 +521,23 @@ export default function App() {
     handleSelectPage(targetNb.id, newPage.id);
   };
 
+  // Handle Page Template Change
+  const handleUpdatePageTemplate = (template: PageTemplate) => {
+    setDefaultTemplate(template);
+    if (!activePage || !activeNotebook) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      notebooks: prev.notebooks.map((nb) =>
+        nb.id === activeNotebook.id
+          ? {
+              ...nb,
+              pages: nb.pages.map((pg) => (pg.id === activePage.id ? { ...pg, template } : pg)),
+            }
+          : nb
+      ),
+    }));
+  };
+
   // Canvas Stroke & Image Updates
   const handleUpdatePageStrokes = (
     pageId: string,
@@ -772,7 +791,7 @@ export default function App() {
     { id: 'act_tool_fountain', title: 'Tool: Fountain Pen (Calligraphy)', category: 'Tools', run: () => setCurrentTool('fountain') },
     { id: 'act_tool_eraser', title: 'Tool: Eraser (E)', category: 'Tools', shortcut: 'E', run: () => setCurrentTool('eraser') },
     { id: 'act_tool_lasso', title: 'Tool: Lasso Selection (L)', category: 'Tools', shortcut: 'L', run: () => setCurrentTool('lasso') },
-    { id: 'act_tool_highlighter', title: 'Tool: Highlighter', category: 'Tools', run: () => setCurrentTool('highlighter') },
+    { id: 'act_toggle_vanishing_ink', title: 'Toggle Vanishing Ink Mode (Blinks & Auto-Disappears)', category: 'Tools', run: () => setIsDisappearingInk((v) => !v) },
     { id: 'act_zen_mode', title: 'Zen Mode: Maximize Working Area (F11)', category: 'Workspace', shortcut: 'F11', run: () => setIsZenMode((z) => !z) },
     { id: 'act_fit_fullscreen', title: 'Workspace: Fit Edge-to-Edge Full Screen', category: 'Workspace', run: () => setPageAspectRatio('flexible') },
     { id: 'act_infinite_canvas', title: 'Workspace: Infinite Expansive Canvas', category: 'Workspace', run: () => setPageAspectRatio('infinite') },
@@ -1001,6 +1020,8 @@ export default function App() {
             setOpacity={setOpacity}
             handwritingMode={handwritingMode}
             setHandwritingMode={setHandwritingMode}
+            isDisappearingInk={isDisappearingInk}
+            onToggleDisappearingInk={() => setIsDisappearingInk((prev) => !prev)}
             penPresets={penPresets}
             onSavePreset={handleSavePreset}
             onApplyPreset={handleApplyPreset}
@@ -1025,6 +1046,7 @@ export default function App() {
             strokeWidth={strokeWidth}
             opacity={opacity}
             handwritingMode={handwritingMode}
+            isDisappearingInk={isDisappearingInk}
             tabletSettings={tabletSettings}
             currentTheme={currentTheme}
             activeTemplate={activeTemplate}
@@ -1037,6 +1059,8 @@ export default function App() {
             onSetPageAspectRatio={setPageAspectRatio}
             isZenMode={isZenMode}
             onToggleZenMode={() => setIsZenMode(!isZenMode)}
+            actionsRef={canvasActionsRef}
+            onZoomChange={setCanvasZoom}
           />
 
           {/* Bottom Page Control Toolbar (Outside Working Area Canvas) */}
@@ -1053,21 +1077,17 @@ export default function App() {
             activeNotebook={activeNotebook}
             isZenMode={isZenMode}
             onToggleZenMode={() => setIsZenMode(!isZenMode)}
+            zoom={canvasZoom}
+            onZoomIn={() => canvasActionsRef.current?.zoomIn()}
+            onZoomOut={() => canvasActionsRef.current?.zoomOut()}
+            onCenterAndFit={() => canvasActionsRef.current?.centerAndFit()}
+            onFitWidth={() => canvasActionsRef.current?.fitWidth()}
+            onFitFullScreen={() => canvasActionsRef.current?.fitFullScreen()}
+            activeTemplate={activePage?.template || defaultTemplate}
+            onChangeTemplate={handleUpdatePageTemplate}
           />
         </div>
       </div>
-
-      {/* Bottom Status Bar */}
-      <StatusBar
-        currentTool={currentTool}
-        strokeWidth={strokeWidth}
-        handwritingMode={handwritingMode}
-        tabletPressure={tabletPressure}
-        currentTheme={currentTheme}
-        tabletConnected={tabletConnected}
-        localFolderName={localFsState.folderName}
-        onConnectLocalDirectory={handleConnectLocalDirectory}
-      />
 
       {/* VS Code Command Palette (Ctrl+Shift+P) */}
       <CommandPalette

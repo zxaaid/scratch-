@@ -1,18 +1,19 @@
 import React from 'react';
 import {
   Plus,
-  RectangleHorizontal,
   ChevronLeft,
   ChevronRight,
   FileText,
   Check,
   Maximize2,
   Minimize2,
-  Infinity,
-  Sparkles,
+  ZoomIn,
+  ZoomOut,
+  Expand,
   LayoutGrid,
+  File,
 } from 'lucide-react';
-import { Page, PageAspectRatio, ThemeId, Notebook } from '../types';
+import { Page, PageAspectRatio, ThemeId, Notebook, PageTemplate } from '../types';
 import { THEMES } from '../lib/themes';
 import { PAGE_ASPECT_PRESETS } from '../lib/pageDimensions';
 
@@ -29,6 +30,16 @@ interface BottomPageToolbarProps {
   activeNotebook?: Notebook;
   isZenMode?: boolean;
   onToggleZenMode?: () => void;
+  // Relocated Viewport / Zoom Controls (Outside working canvas)
+  zoom?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onCenterAndFit?: () => void;
+  onFitWidth?: () => void;
+  onFitFullScreen?: () => void;
+  // Template Selector (Clean Blank, Ruled, Grid, Dot)
+  activeTemplate?: PageTemplate;
+  onChangeTemplate?: (template: PageTemplate) => void;
 }
 
 export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
@@ -40,58 +51,46 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
   onSelectPage,
   currentTheme,
   activePageTitle,
+  activePage,
   isZenMode = false,
   onToggleZenMode,
+  zoom = 1.0,
+  onZoomIn,
+  onZoomOut,
+  onCenterAndFit,
+  onFitWidth,
+  onFitFullScreen,
+  activeTemplate = 'blank',
+  onChangeTemplate,
 }) => {
   const theme = THEMES[currentTheme];
-  const isLandscape = pageAspectRatio === 'a4-landscape';
   const isFlexible = pageAspectRatio === 'flexible';
   const isInfinite = pageAspectRatio === 'infinite';
 
-  const toggleA4Landscape = () => {
-    if (isLandscape) {
-      onSetPageAspectRatio('a4-portrait');
-    } else {
-      onSetPageAspectRatio('a4-landscape');
-    }
-  };
-
-  const toggleFlexible = () => {
-    if (isFlexible) {
-      onSetPageAspectRatio('a4-landscape');
-    } else {
-      onSetPageAspectRatio('flexible');
-    }
-  };
-
-  const toggleInfinite = () => {
-    if (isInfinite) {
-      onSetPageAspectRatio('a4-landscape');
-    } else {
-      onSetPageAspectRatio('infinite');
-    }
-  };
+  const currentTemplate = activePage?.template || activeTemplate || 'blank';
 
   return (
     <div
-      className="h-10 px-4 flex items-center justify-between border-t text-xs select-none z-20 shrink-0 font-sans shadow-md"
+      id="bottom-page-toolbar"
+      className="h-11 px-3 flex items-center justify-between border-t text-xs select-none z-20 shrink-0 font-sans shadow-lg gap-2 overflow-x-auto"
       style={{
-        backgroundColor: theme.sidebarBg,
-        borderColor: theme.border,
-        color: theme.editorFg,
+        backgroundColor: '#06141B',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        color: '#f1f5f9',
       }}
     >
-      {/* Left side: Page Navigation & Active Page Title */}
-      <div className="flex items-center gap-3">
+      {/* Left side: Page Navigation, Page Info & Template Selector */}
+      <div className="flex items-center gap-2 shrink-0">
         {activePageTitle && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/20 border border-white/10 font-medium text-gray-300">
-            <FileText size={13} className="text-sky-400" />
-            <span className="max-w-[150px] truncate">{activePageTitle}</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/40 border border-white/10 font-medium text-gray-200">
+            <FileText size={13} className="text-[#F4DB08]" />
+            <span className="max-w-[130px] truncate text-[11px]">{activePageTitle}</span>
           </div>
         )}
 
+        {/* Page Switcher */}
         {notebookPages && notebookPages.length > 0 && (
-          <div className="flex items-center gap-1 bg-black/30 p-0.5 rounded-lg border border-white/10">
+          <div className="flex items-center gap-0.5 bg-black/40 p-0.5 rounded-lg border border-white/10">
             <button
               onClick={() => {
                 if (currentPageIndex !== undefined && currentPageIndex > 0 && onSelectPage) {
@@ -99,20 +98,20 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
                 }
               }}
               disabled={currentPageIndex === undefined || currentPageIndex <= 0}
-              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 text-gray-300 transition-colors cursor-pointer"
+              className="p-1 rounded hover:bg-white/10 disabled:opacity-25 text-gray-300 hover:text-white transition-colors cursor-pointer"
               title="Previous Page"
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={14} />
             </button>
 
             <select
               value={notebookPages[currentPageIndex ?? 0]?.id || ''}
               onChange={(e) => onSelectPage && onSelectPage(e.target.value)}
-              className="bg-transparent text-sky-400 font-bold px-1 py-0.5 outline-none cursor-pointer text-xs"
+              className="bg-transparent text-[#F4DB08] font-semibold px-1 py-0.5 outline-none cursor-pointer text-xs"
               title="Jump to Page"
             >
               {notebookPages.map((p, idx) => (
-                <option key={p.id} value={p.id} className="bg-zinc-900 text-white">
+                <option key={p.id} value={p.id} className="bg-[#06141B] text-white">
                   Page {idx + 1} / {notebookPages.length}: {p.title}
                 </option>
               ))}
@@ -129,30 +128,124 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
                 }
               }}
               disabled={currentPageIndex === undefined || currentPageIndex >= notebookPages.length - 1}
-              className="p-1 rounded hover:bg-white/10 disabled:opacity-30 text-gray-300 transition-colors cursor-pointer"
+              className="p-1 rounded hover:bg-white/10 disabled:opacity-25 text-gray-300 hover:text-white transition-colors cursor-pointer"
               title="Next Page"
             >
-              <ChevronRight size={15} />
+              <ChevronRight size={14} />
             </button>
+          </div>
+        )}
+
+        {/* PAGE TEMPLATE SELECTOR (Clean Page / Blank / Ruled / Grid / Dot) */}
+        {onChangeTemplate && (
+          <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/10">
+            <File size={12} className="text-[#F4DB08]" />
+            <select
+              value={currentTemplate}
+              onChange={(e) => onChangeTemplate(e.target.value as PageTemplate)}
+              className="bg-transparent text-gray-200 hover:text-white font-medium outline-none cursor-pointer text-[11px]"
+              title="Page Template (Clean Blank Page, Ruled Lines, Grid, etc.)"
+            >
+              <option value="blank" className="bg-[#06141B] text-white">
+                Clean Blank Page
+              </option>
+              <option value="ruled" className="bg-[#06141B] text-white">
+                Ruled Lines
+              </option>
+              <option value="grid" className="bg-[#06141B] text-white">
+                Square Grid
+              </option>
+              <option value="dot" className="bg-[#06141B] text-white">
+                Dot Matrix
+              </option>
+              <option value="graph" className="bg-[#06141B] text-white">
+                Fine Graph
+              </option>
+            </select>
           </div>
         )}
       </div>
 
-      {/* Right side: Action Controls (Maximize Workspace, Preset Selector, Add Page, A4 Landscape, Fit Working Area) */}
-      <div className="flex items-center gap-2">
+      {/* Center & Right side: Viewport Zoom Controls (Relocated Out of Canvas) & Layout Controls */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {/* VIEWPORT CONTROLS BAR */}
+        <div className="flex items-center gap-1 bg-black/50 p-0.5 rounded-lg border border-white/10 text-gray-200">
+          {onZoomOut && (
+            <button
+              onClick={onZoomOut}
+              className="p-1 rounded hover:bg-white/15 text-gray-300 hover:text-white transition-colors cursor-pointer"
+              title="Zoom Out (Ctrl -)"
+            >
+              <ZoomOut size={14} />
+            </button>
+          )}
+
+          {onCenterAndFit && (
+            <button
+              onClick={onCenterAndFit}
+              className="px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#F4DB08] hover:text-yellow-300 hover:bg-white/10 rounded cursor-pointer transition-all"
+              title="Click to Reset Zoom & Center Page"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+          )}
+
+          {onZoomIn && (
+            <button
+              onClick={onZoomIn}
+              className="p-1 rounded hover:bg-white/15 text-gray-300 hover:text-white transition-colors cursor-pointer"
+              title="Zoom In (Ctrl +)"
+            >
+              <ZoomIn size={14} />
+            </button>
+          )}
+
+          {onCenterAndFit && (
+            <button
+              onClick={onCenterAndFit}
+              className="px-2 py-0.5 rounded hover:bg-white/15 text-gray-300 hover:text-white transition-all text-[11px] font-medium cursor-pointer"
+              title="Center & Fit Page on Screen"
+            >
+              Center
+            </button>
+          )}
+
+          {onFitWidth && (
+            <button
+              onClick={onFitWidth}
+              className="px-2 py-0.5 rounded hover:bg-white/15 text-gray-300 hover:text-white transition-all text-[11px] font-medium cursor-pointer"
+              title="Fit Page to Width"
+            >
+              Fit Width
+            </button>
+          )}
+
+          {onFitFullScreen && (
+            <button
+              onClick={onFitFullScreen}
+              className="p-1 rounded hover:bg-white/15 text-gray-300 hover:text-white transition-colors cursor-pointer"
+              title="Fit Screen (Maximize on Viewport)"
+            >
+              <Expand size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="h-4 w-[1px] bg-white/15 mx-0.5" />
+
         {/* + ADD PAGE BUTTON */}
         <button
           onClick={onAddPage}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 font-semibold text-white shadow-sm transition-all active:scale-95 cursor-pointer"
-          title="Add a new page to this document"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F4DB08] hover:bg-yellow-400 font-semibold text-black shadow-sm transition-all active:scale-95 cursor-pointer text-xs"
+          title="Add a new clean page to this document"
         >
-          <Plus size={15} />
+          <Plus size={14} className="stroke-[2.5]" />
           <span>Add Page</span>
         </button>
 
         {/* ASPECT RATIO & WORKING AREA PRESET DROPDOWN */}
-        <div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded-lg border border-white/10 text-gray-300">
-          <LayoutGrid size={13} className="text-sky-400" />
+        <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded-lg border border-white/10 text-gray-300">
+          <LayoutGrid size={13} className="text-[#F4DB08]" />
           <select
             value={pageAspectRatio}
             onChange={(e) => onSetPageAspectRatio(e.target.value as PageAspectRatio)}
@@ -160,83 +253,30 @@ export const BottomPageToolbar: React.FC<BottomPageToolbarProps> = ({
             title="Select Workspace Size Preset"
           >
             {Object.values(PAGE_ASPECT_PRESETS).map((preset) => (
-              <option key={preset.id} value={preset.id} className="bg-zinc-900 text-white">
+              <option key={preset.id} value={preset.id} className="bg-[#06141B] text-white">
                 {preset.name}
               </option>
             ))}
           </select>
         </div>
 
-        {/* FIT WORKING AREA (FLEXIBLE PAGE) BUTTON */}
-        <button
-          onClick={toggleFlexible}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer border ${
-            isFlexible
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
-              : 'bg-black/30 hover:bg-black/50 text-gray-300 border-white/10 hover:text-white'
-          }`}
-          title={
-            isFlexible
-              ? 'Current: Flexible Auto-Fit (fills entire working area)'
-              : 'Make page size flexible to fill the entire working area'
-          }
-        >
-          <Maximize2 size={14} className={isFlexible ? 'text-emerald-400' : 'text-gray-400'} />
-          <span>Fit Working Area</span>
-          {isFlexible && <Check size={13} className="text-emerald-400 ml-0.5" />}
-        </button>
-
-        {/* INFINITE EXPANSIVE CANVAS BUTTON */}
-        <button
-          onClick={toggleInfinite}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer border ${
-            isInfinite
-              ? 'bg-purple-500/20 text-purple-300 border-purple-500/80 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-              : 'bg-black/30 hover:bg-black/50 text-gray-300 border-white/10 hover:text-white'
-          }`}
-          title={
-            isInfinite
-              ? 'Current: Infinite Canvas (Expansive unbounded drawing zone)'
-              : 'Switch to Infinite Canvas for maximum expansive space'
-          }
-        >
-          <Infinity size={15} className={isInfinite ? 'text-purple-400' : 'text-gray-400'} />
-          <span>Infinite Canvas</span>
-          {isInfinite && <Check size={13} className="text-purple-400 ml-0.5" />}
-        </button>
-
-        {/* A4 LANDSCAPE BUTTON */}
-        <button
-          onClick={toggleA4Landscape}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer border ${
-            isLandscape
-              ? 'bg-amber-500/20 text-amber-300 border-amber-500/80 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-              : 'bg-black/30 hover:bg-black/50 text-gray-300 border-white/10 hover:text-white'
-          }`}
-          title={isLandscape ? 'Current: A4 Landscape (Click to toggle A4 Portrait)' : 'Switch to A4 Landscape format'}
-        >
-          <RectangleHorizontal size={15} className={isLandscape ? 'text-amber-400' : 'text-gray-400'} />
-          <span>A4</span>
-          {isLandscape && <Check size={13} className="text-amber-400 ml-0.5" />}
-        </button>
-
         {/* MAXIMIZE WORKING AREA / ZEN MODE TOGGLE */}
         {onToggleZenMode && (
           <button
             onClick={onToggleZenMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer border ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer border text-xs ${
               isZenMode
-                ? 'bg-sky-500/25 text-sky-200 border-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.3)]'
-                : 'bg-black/40 hover:bg-black/60 text-sky-300 hover:text-white border-sky-500/30 hover:border-sky-400/60'
+                ? 'bg-[#F4DB08]/20 text-[#F4DB08] border-[#F4DB08]/80 shadow-[0_0_10px_rgba(244,219,8,0.25)]'
+                : 'bg-black/40 hover:bg-black/60 text-gray-300 hover:text-[#F4DB08] border-white/10 hover:border-[#F4DB08]/40'
             }`}
             title={
               isZenMode
                 ? 'Exit Zen Mode (Collapse working area back to standard)'
-                : 'Maximize Working Area (Zen Mode: Hides sidebar & maximizes workspace - Shortcut: F11 / Z)'
+                : 'Maximize Working Area (Zen Mode: Hides sidebars & maximizes canvas)'
             }
           >
-            {isZenMode ? <Minimize2 size={14} className="text-sky-300" /> : <Maximize2 size={14} className="text-sky-400" />}
-            <span>{isZenMode ? 'Exit Maximize' : 'Maximize Area'}</span>
+            {isZenMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span>{isZenMode ? 'Exit Max' : 'Maximize'}</span>
           </button>
         )}
       </div>

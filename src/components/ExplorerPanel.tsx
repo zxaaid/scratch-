@@ -174,7 +174,7 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     const newPage: Page = {
       id: `pg_${Date.now()}`,
       title: title.trim(),
-      template: 'ruled',
+      template: 'blank',
       strokes: [],
       shapes: [],
       createdAt: new Date().toISOString(),

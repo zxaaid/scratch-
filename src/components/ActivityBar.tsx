@@ -2,7 +2,6 @@ import React from 'react';
 import {
   FolderTree,
   FileText,
-  Search,
   BookOpen,
   Settings,
   Sun,
@@ -40,7 +39,6 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
     { id: 'explorer', label: 'Explorer (Notebooks)', icon: <FolderTree size={22} /> },
     { id: 'practice', label: 'Practice & Feedback', icon: <BookOpen size={22} /> },
     { id: 'pdfs', label: 'PDF Documents', icon: <FileText size={22} /> },
-    { id: 'search', label: 'Search (Ctrl+F)', icon: <Search size={22} /> },
     { id: 'settings', label: 'Settings & Tablet', icon: <Settings size={22} /> },
   ];
 
@@ -61,8 +59,9 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
       <div className="flex flex-col items-center gap-2 w-full">
         {/* App Logo / Pen Icon */}
         <div
-          className="w-9 h-9 mb-2 flex items-center justify-center rounded-md bg-sky-600 text-white font-bold text-xs shadow-sm cursor-pointer hover:bg-sky-500 transition-colors"
-          title="Handwriting Workspace (VS Code Inspired)"
+          className="w-9 h-9 mb-2 flex items-center justify-center rounded-md font-black text-xs shadow-sm cursor-pointer transition-all hover:scale-105"
+          style={{ backgroundColor: '#F4DB08', color: '#000000' }}
+          title="Handwriting Workspace"
         >
           HW
         </div>
